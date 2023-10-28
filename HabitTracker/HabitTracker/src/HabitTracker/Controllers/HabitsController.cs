@@ -6,11 +6,11 @@ namespace HabitTracker.Controllers
 {
     [ApiController]
     [Route("[controller]")]
-    public class HabitController : ControllerBase
+    public class HabitsController : ControllerBase
     {
         private readonly HabitRepository _habitRepository;
 
-        public HabitController(HabitRepository habitRepository)
+        public HabitsController(HabitRepository habitRepository)
         {
             _habitRepository = habitRepository;
         }
