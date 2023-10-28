@@ -1,32 +1,31 @@
 import { Environment } from "aws-cdk-lib"
-import { stockholm } from "./constants"
+import { apexDomain, projectName } from "./constants"
 
-// rename to StageConfiguration
 export interface StageConfiguration {
   awsEnv: Environment,
   stageName: string,
-  stageSubDomain: string,
   corsOrigins: string[],
   cognitoHostedUiDomainPrefix: string
 }
 
+const stockholm: Environment = { region: 'eu-north-1', account: process.env.CDK_DEFAULT_ACCOUNT };
+const baseDomain = `${projectName}.${apexDomain}`;
+
 export const devConfiguration: StageConfiguration = {
   awsEnv: stockholm,
   stageName: 'dev',
-  stageSubDomain: 'dev.',
   corsOrigins: [
     'http://localhost:5173',
-    'https://dev.habit-tracker.cloudchaotic.com'
+    `https://dev.${baseDomain}`
   ],
-  cognitoHostedUiDomainPrefix: 'habit-tracker-dev'
+  cognitoHostedUiDomainPrefix: `${projectName}-dev`
 }
 
 export const prodConfiguration: StageConfiguration = {
   awsEnv: stockholm,
   stageName: 'prod',
-  stageSubDomain: 'prod.',
-  corsOrigins: [ 'https://habit-tracker.cloudchaotic.com' ],
-  cognitoHostedUiDomainPrefix: 'habit-tracker-prod'
+  corsOrigins: [ `https://${baseDomain}` ],
+  cognitoHostedUiDomainPrefix: `${projectName}-prod`
 }
 
 export const stageConfigurations: StageConfiguration[] = [ devConfiguration, prodConfiguration ]

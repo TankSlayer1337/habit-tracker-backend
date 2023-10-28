@@ -8,7 +8,7 @@ import { CognitoUserPoolsAuthorizer, LambdaIntegration, RestApi } from 'aws-cdk-
 import { DnsValidatedCertificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { ARecord, HostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
 import { ApiGateway } from 'aws-cdk-lib/aws-route53-targets';
-import { repositoryName } from './constants';
+import { apexDomain, projectName } from './constants';
 
 interface HabitTrackerBackendStackProps extends cdk.StackProps {
   envConfig: StageConfiguration
@@ -20,21 +20,21 @@ export class HabitTrackerBackendStack extends cdk.Stack {
 
     const envConfig = props.envConfig;
     const stage = props.envConfig.stageName;
-    const apexDomain: string = 'cloudchaotic.com';
-    const apiDomainName = `${envConfig.stageSubDomain}habit-tracker.api.${apexDomain}`;
+    const apiSubDomain = `${envConfig.stageName}.${projectName}.api`;
+    const apiDomainName = `${apiSubDomain}.${apexDomain}`;
 
-    const userPool = this.setupCognitoUserPool(repositoryName, props.envConfig, apiDomainName);
+    const userPool = this.setupCognitoUserPool(projectName, props.envConfig, apiDomainName);
 
-    const table = new Table(this, `DynamoDBTable`, {
-      tableName: `${repositoryName}-table-${this.region}-${stage}`,
+    const table = new Table(this, `Table`, {
+      tableName: `${projectName}-table-${this.region}-${stage}`,
       partitionKey: { name: 'PK', type: AttributeType.STRING },
       sortKey: { name: 'SK', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });
 
-    const lambdaFunction = new Function(this, 'HabitsAPILambda', {
-      functionName: `${repositoryName}-api-${this.region}-${stage}`,
+    const lambdaFunction = new Function(this, 'LambdaFunction', {
+      functionName: `${projectName}-api-${this.region}-${stage}`,
       runtime: Runtime.DOTNET_6,
       code: Code.fromAsset(`../HabitTracker/HabitTracker/src/HabitTracker/bin/build-package.zip`),
       handler: 'HabitTracker',
@@ -58,7 +58,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
       cleanupRoute53Records: true // not recommended for production use
     });
     const api = new RestApi(this, 'HabitTrackerRestAPI', {
-      restApiName: `${repositoryName}-api-${this.region}-${stage}`,
+      restApiName: `${projectName}-api-${this.region}-${stage}`,
       domainName: {
         domainName: apiDomainName,
         certificate: certificate
@@ -82,7 +82,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
 
     new ARecord(this, 'ARecord', {
       zone: hostedZone,
-      recordName: `${envConfig.stageSubDomain}habit-tracker.api`,
+      recordName: apiSubDomain,
       target: RecordTarget.fromAlias(new ApiGateway(api)),
       ttl: cdk.Duration.seconds(0)
     });
@@ -113,7 +113,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
       scopes: [fullAccessScope]
     });
 
-    const client = userPool.addClient('habit-tracker', {
+    const client = userPool.addClient('UserPoolAppClient', {
       supportedIdentityProviders: [
         UserPoolClientIdentityProvider.GOOGLE
       ],
