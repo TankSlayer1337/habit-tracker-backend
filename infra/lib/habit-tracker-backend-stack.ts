@@ -11,22 +11,22 @@ import { ApiGateway } from 'aws-cdk-lib/aws-route53-targets';
 import { apexDomain, projectName } from './constants';
 
 interface HabitTrackerBackendStackProps extends cdk.StackProps {
-  envConfig: StageConfiguration
+  stageConfig: StageConfiguration
 }
 
 export class HabitTrackerBackendStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: HabitTrackerBackendStackProps) {
     super(scope, id, props);
 
-    const envConfig = props.envConfig;
-    const stage = props.envConfig.stageName;
-    const apiSubDomain = `${envConfig.stageName}.${projectName}.api`;
+    const stageConfig = props.stageConfig;
+    const stageName = props.stageConfig.stageName;
+    const apiSubDomain = `${stageConfig.stageName}.${projectName}.api`;
     const apiDomainName = `${apiSubDomain}.${apexDomain}`;
 
-    const userPool = this.setupCognitoUserPool(projectName, props.envConfig, apiDomainName);
+    const userPool = this.setupCognitoUserPool(projectName, props.stageConfig, apiDomainName);
 
     const table = new Table(this, `Table`, {
-      tableName: `${projectName}-table-${this.region}-${stage}`,
+      tableName: `${projectName}-table-${this.region}-${stageName}`,
       partitionKey: { name: 'PK', type: AttributeType.STRING },
       sortKey: { name: 'SK', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
@@ -34,7 +34,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     });
 
     const lambdaFunction = new Function(this, 'LambdaFunction', {
-      functionName: `${projectName}-api-${this.region}-${stage}`,
+      functionName: `${projectName}-api-${this.region}-${stageName}`,
       runtime: Runtime.DOTNET_6,
       code: Code.fromAsset(`../HabitTracker/HabitTracker/src/HabitTracker/bin/build-package.zip`),
       handler: 'HabitTracker',
@@ -43,7 +43,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
       reservedConcurrentExecutions: 2,
       environment: {
         'TABLE_NAME': table.tableName,
-        'USERINFO_ENDPOINT_URL': `https://${envConfig.cognitoHostedUiDomainPrefix}.auth.${this.region}.amazoncognito.com/oauth2/userInfo`
+        'USERINFO_ENDPOINT_URL': `https://${stageConfig.cognitoHostedUiDomainPrefix}.auth.${this.region}.amazoncognito.com/oauth2/userInfo`
       }
     });
     table.grantReadWriteData(lambdaFunction);
@@ -58,7 +58,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
       cleanupRoute53Records: true // not recommended for production use
     });
     const api = new RestApi(this, 'HabitTrackerRestAPI', {
-      restApiName: `${projectName}-api-${this.region}-${stage}`,
+      restApiName: `${projectName}-api-${this.region}-${stageName}`,
       domainName: {
         domainName: apiDomainName,
         certificate: certificate
@@ -77,7 +77,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     cors also has to be set in the .NET application.
     */
     proxyResource.addCorsPreflight({
-      allowOrigins: envConfig.corsOrigins
+      allowOrigins: stageConfig.corsOrigins
     });
 
     new ARecord(this, 'ARecord', {

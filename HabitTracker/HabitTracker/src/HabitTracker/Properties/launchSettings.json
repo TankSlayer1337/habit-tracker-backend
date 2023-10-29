@@ -4,7 +4,9 @@
       "commandName": "Project",
       "launchBrowser": true,
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "TABLE_NAME": "habit-tracker-table-eu-north-1-dev",
+        "USERINFO_ENDPOINT_URL": "https://habit-tracker-dev.auth.eu-north-1.amazoncognito.com/oauth2/userInfo"
       },
       "applicationUrl": "https://localhost:58604;http://localhost:58605"
     }
