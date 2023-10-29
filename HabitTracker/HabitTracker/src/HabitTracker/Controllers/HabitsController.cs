@@ -29,6 +29,27 @@ namespace HabitTracker.Controllers
             return await _habitRepository.GetHabits(authorizationHeader);
         }
 
+        [HttpPost("done")]
+        public async Task RegisterDoneHabit([FromBody] DoneHabitRequest request)
+        {
+            var authorizationHeader = GetAuthorizationHeader(Request);
+            await _habitRepository.RegisterDoneHabit(authorizationHeader, request);
+        }
+
+        [HttpDelete("done")]
+        public async Task DeleteDoneHabit([FromBody] DoneHabitRequest request)
+        {
+            var authorizationHeader = GetAuthorizationHeader(Request);
+            await _habitRepository.DeleteDoneHabit(authorizationHeader, request);
+        }
+
+        [HttpGet("done")]
+        public async Task<List<DoneHabitEntry>> GetDoneHabits()
+        {
+            var authorizationHeader = GetAuthorizationHeader(Request);
+            return await _habitRepository.GetDoneHabitEntries(authorizationHeader);
+        }
+
         private static string GetAuthorizationHeader(HttpRequest request)
         {
             return request.Headers["Authorization"].First();
