@@ -56,6 +56,8 @@ namespace HabitTracker.DynamoDb.PropertyConverters.MultipleProperties
                 var propertyName = PropertyDefinitions[i].Name;
                 var val = orderedValues[i];
                 data += $"{propertyName}#{val}";
+                if (string.IsNullOrEmpty(val))  // For querying with empty values.
+                    return data;
             }
 
             return data;

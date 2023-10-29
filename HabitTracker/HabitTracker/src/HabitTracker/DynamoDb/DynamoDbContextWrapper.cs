@@ -24,6 +24,11 @@ namespace HabitTracker.DynamoDb
             return _dynamoDbContext.SaveAsync(item, _operationConfig);
         }
 
+        public Task DeleteAsync<T>(T item) where T : class
+        {
+            return _dynamoDbContext.DeleteAsync(item, _operationConfig);
+        }
+
         public Task<List<T>> QueryAsync<T>(QueryOperationConfig config) where T : class
         {
             return _dynamoDbContext.FromQueryAsync<T>(config, _operationConfig).GetRemainingAsync();
