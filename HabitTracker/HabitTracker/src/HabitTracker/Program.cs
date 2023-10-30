@@ -14,6 +14,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy(name: myAllowSpecificOrigins,
         policy =>
         {
+            // TODO: limit to one stage?
             policy.WithOrigins("http://localhost:5173", "https://dev.habit-tracker.cloudchaotic.com", "https://habit-tracker.cloudchaotic.com");
         });
 });
