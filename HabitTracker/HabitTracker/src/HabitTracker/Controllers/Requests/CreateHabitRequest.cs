@@ -1,4 +1,4 @@
-﻿namespace HabitTracker.Controllers
+﻿namespace HabitTracker.Controllers.Requests
 {
     public class CreateHabitRequest
     {

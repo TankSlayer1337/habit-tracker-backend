@@ -1,4 +1,6 @@
-﻿using HabitTracker.DynamoDb.Models;
+﻿using HabitTracker.Controllers.Outputs;
+using HabitTracker.Controllers.Requests;
+using HabitTracker.DynamoDb.Models;
 using HabitTracker.Habits;
 using Microsoft.AspNetCore.Mvc;
 
@@ -22,11 +24,25 @@ namespace HabitTracker.Controllers
             await _habitRepository.CreateHabit(authorizationHeader, request.Name);
         }
 
-        [HttpGet]
-        public async Task<List<HabitDefinitionEntry>> GetHabits()
+        [HttpPost("update")]
+        public async Task UpdateHabit([FromBody] UpdateHabitRequest request)
         {
             var authorizationHeader = GetAuthorizationHeader(Request);
-            return await _habitRepository.GetHabits(authorizationHeader);
+            await _habitRepository.UpdateHabit(authorizationHeader, request);
+        }
+
+        [HttpDelete("{habitId}")]
+        public async Task DeleteHabit(string habitId)
+        {
+            var authorizationHeader = GetAuthorizationHeader(Request);
+            await _habitRepository.DeleteHabit(authorizationHeader, habitId);
+        }
+
+        [HttpGet]
+        public async Task<List<HabitDefinition>> GetHabits()
+        {
+            var authorizationHeader = GetAuthorizationHeader(Request);
+            return await _habitRepository.GetHabitDefinitions(authorizationHeader);
         }
 
         [HttpPost("done")]
@@ -44,10 +60,10 @@ namespace HabitTracker.Controllers
         }
 
         [HttpGet("done")]
-        public async Task<List<DoneHabitEntry>> GetDoneHabits()
+        public async Task<List<DoneHabitPointer>> GetDoneHabits()
         {
             var authorizationHeader = GetAuthorizationHeader(Request);
-            return await _habitRepository.GetDoneHabitEntries(authorizationHeader);
+            return await _habitRepository.GetDoneHabits(authorizationHeader);
         }
 
         private static string GetAuthorizationHeader(HttpRequest request)

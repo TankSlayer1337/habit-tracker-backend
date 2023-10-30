@@ -1,5 +1,6 @@
 ﻿using Amazon.DynamoDBv2.DocumentModel;
-using HabitTracker.Controllers;
+using HabitTracker.Controllers.Outputs;
+using HabitTracker.Controllers.Requests;
 using HabitTracker.DynamoDb;
 using HabitTracker.DynamoDb.Models;
 using HabitTracker.UserInfo;
@@ -24,21 +25,33 @@ namespace HabitTracker.Habits
             await _dynamoDbContext.SaveAsync(habitDefinitionEntry);
         }
 
-        public async Task<List<HabitDefinitionEntry>> GetHabits(string authorizationHeader)
+        public async Task UpdateHabit(string authorizationHeader, UpdateHabitRequest request)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            var habits = await _dynamoDbContext.QueryWithEmptyBeginsWithAsync<HabitDefinitionEntry>(userId);
-            return habits;
+            var habitDefinitionEntry = await GetHabitDefinitionAsync(userId, request.HabitId);
+            var updatedEntry = habitDefinitionEntry.CopyWithNewValues(request);
+            await _dynamoDbContext.SaveAsync(updatedEntry);
+        }
+
+        public async Task DeleteHabit(string authorizationHeader, string habitId)
+        {
+            var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
+            var habitDefinitionEntry = await GetHabitDefinitionAsync(userId, habitId);
+            await _dynamoDbContext.DeleteAsync(habitDefinitionEntry);
+        }
+
+        public async Task<List<HabitDefinition>> GetHabitDefinitions(string authorizationHeader)
+        {
+            var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
+            var habitDefinitionEntries = await _dynamoDbContext.QueryWithEmptyBeginsWithAsync<HabitDefinitionEntry>(userId);
+            var habitDefinitions = habitDefinitionEntries.Select(entry => entry.Convert()).ToList();
+            return habitDefinitions;
         }
 
         public async Task RegisterDoneHabit(string authorizationHeader, DoneHabitRequest request)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            var habits = await _dynamoDbContext.QueryAsync<HabitDefinitionEntry>(userId, QueryOperator.Equal, new string[] { request.HabitId });
-            if (habits == null || !habits.Any())
-            {
-                throw new BadHttpRequestException($"Habit with ID {request.HabitId} was not found in the database.");
-            }
+            _ = await GetHabitDefinitionAsync(userId, request.HabitId);
             var doneHabitEntry = DoneHabitEntry.Create(userId, request);
             await _dynamoDbContext.SaveAsync(doneHabitEntry);
         }
@@ -56,11 +69,22 @@ namespace HabitTracker.Habits
             await _dynamoDbContext.DeleteAsync(doneHabitEntry);
         }
 
-        public async Task<List<DoneHabitEntry>> GetDoneHabitEntries(string authorizationHeader)
+        public async Task<List<DoneHabitPointer>> GetDoneHabits(string authorizationHeader)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
             var doneHabitEntries = await _dynamoDbContext.QueryAsync<DoneHabitEntry>(userId, QueryOperator.BeginsWith, new DoneHabitPointer[] { new DoneHabitPointer() });
-            return doneHabitEntries;
+            var pointers = doneHabitEntries.Select(entry => entry.DoneHabitPointer).ToList();
+            return pointers;
+        }
+
+        private async Task<HabitDefinitionEntry> GetHabitDefinitionAsync(string userId, string habitId)
+        {
+            var habits = await _dynamoDbContext.QueryAsync<HabitDefinitionEntry>(userId, QueryOperator.Equal, new string[] { habitId });
+            if (habits == null || !habits.Any())
+            {
+                throw new BadHttpRequestException($"Habit with ID {habitId} was not found in the database.");
+            }
+            return habits.Single();
         }
     }
 }

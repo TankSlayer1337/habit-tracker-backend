@@ -1,5 +1,5 @@
 ﻿using Amazon.DynamoDBv2.DataModel;
-using HabitTracker.Controllers;
+using HabitTracker.Controllers.Requests;
 using HabitTracker.DynamoDb.PropertyConverters;
 using HabitTracker.DynamoDb.PropertyConverters.MultipleProperties.Implementations;
 
