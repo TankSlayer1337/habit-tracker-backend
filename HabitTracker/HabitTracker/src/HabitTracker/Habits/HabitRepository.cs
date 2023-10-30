@@ -72,9 +72,31 @@ namespace HabitTracker.Habits
         public async Task<List<DoneHabitPointer>> GetDoneHabits(string authorizationHeader)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            var doneHabitEntries = await _dynamoDbContext.QueryAsync<DoneHabitEntry>(userId, QueryOperator.BeginsWith, new DoneHabitPointer[] { new DoneHabitPointer() });
+            var doneHabitEntries = await GetDoneHabitEntriesAsync(userId);
             var pointers = doneHabitEntries.Select(entry => entry.DoneHabitPointer).ToList();
             return pointers;
+        }
+
+        public async Task<List<HabitRecord>> GetHabitRecords(string authorizationHeader)
+        {
+            var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
+            var habitDefinitionEntries = await _dynamoDbContext.QueryWithEmptyBeginsWithAsync<HabitDefinitionEntry>(userId);
+            var doneHabitEntries = await GetDoneHabitEntriesAsync(userId);
+            var habitRecords = habitDefinitionEntries.Select(habitDefinitionEntry =>
+            new HabitRecord
+            {
+                HabitId = habitDefinitionEntry.HabitId,
+                Name = habitDefinitionEntry.Name,
+                Dates = doneHabitEntries
+                    .Where(doneHabitEntry => doneHabitEntry.DoneHabitPointer.HabitId == habitDefinitionEntry.HabitId)
+                    .Select(doneHabitEntry => doneHabitEntry.DoneHabitPointer.Date).ToList()
+            }).ToList();
+            return habitRecords;
+        }
+
+        private async Task<List<DoneHabitEntry>> GetDoneHabitEntriesAsync(string userId)
+        {
+            return await _dynamoDbContext.QueryAsync<DoneHabitEntry>(userId, QueryOperator.BeginsWith, new DoneHabitPointer[] { new DoneHabitPointer() });
         }
 
         private async Task<HabitDefinitionEntry> GetHabitDefinitionAsync(string userId, string habitId)

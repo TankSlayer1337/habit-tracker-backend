@@ -17,6 +17,13 @@ namespace HabitTracker.Controllers
             _habitRepository = habitRepository;
         }
 
+        [HttpGet("records")]
+        public async Task<List<HabitRecord>> GetHabitRecords()
+        {
+            var authorizationHeader = GetAuthorizationHeader(Request);
+            return await _habitRepository.GetHabitRecords(authorizationHeader);
+        }
+
         [HttpPost]
         public async Task CreateHabit([FromBody] CreateHabitRequest request)
         {
