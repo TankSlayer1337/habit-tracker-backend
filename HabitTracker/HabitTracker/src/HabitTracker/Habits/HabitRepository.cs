@@ -25,6 +25,14 @@ namespace HabitTracker.Habits
             await _dynamoDbContext.SaveAsync(habitDefinitionEntry);
         }
 
+        public async Task UpdateHabit(string authorizationHeader, UpdateHabitRequest request)
+        {
+            var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
+            var habitDefinitionEntry = await GetHabitDefinitionAsync(userId, request.HabitId);
+            var updatedEntry = habitDefinitionEntry.CopyWithNewValues(request);
+            await _dynamoDbContext.SaveAsync(updatedEntry);
+        }
+
         public async Task DeleteHabit(string authorizationHeader, string habitId)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);

@@ -1,5 +1,6 @@
 ﻿using Amazon.DynamoDBv2.DataModel;
 using HabitTracker.Controllers.Outputs;
+using HabitTracker.Controllers.Requests;
 using HabitTracker.DynamoDb.PropertyConverters;
 
 namespace HabitTracker.DynamoDb.Models
@@ -22,6 +23,16 @@ namespace HabitTracker.DynamoDb.Models
                 UserId = userId,
                 HabitId = Guid.NewGuid().ToString(),
                 Name = name
+            };
+        }
+
+        public HabitDefinitionEntry CopyWithNewValues(UpdateHabitRequest request)
+        {
+            return new HabitDefinitionEntry
+            {
+                UserId = UserId,
+                HabitId = request.HabitId,
+                Name = request.Name
             };
         }
 
