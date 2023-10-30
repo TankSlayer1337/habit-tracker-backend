@@ -1,4 +1,5 @@
 ﻿using Amazon.DynamoDBv2.DataModel;
+using HabitTracker.Controllers.Outputs;
 using HabitTracker.DynamoDb.PropertyConverters;
 
 namespace HabitTracker.DynamoDb.Models
@@ -21,6 +22,15 @@ namespace HabitTracker.DynamoDb.Models
                 UserId = userId,
                 HabitId = Guid.NewGuid().ToString(),
                 Name = name
+            };
+        }
+
+        public HabitDefinition Convert()
+        {
+            return new HabitDefinition
+            {
+                HabitId = HabitId,
+                Name = Name
             };
         }
     }

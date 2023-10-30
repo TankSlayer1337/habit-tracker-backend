@@ -1,7 +1,7 @@
 ﻿using HabitTracker.DynamoDb.PropertyConverters;
 using System.ComponentModel.DataAnnotations;
 
-namespace HabitTracker.Controllers
+namespace HabitTracker.Controllers.Requests
 {
     public class DoneHabitRequest
     {
