@@ -89,13 +89,17 @@ namespace HabitTracker.Habits
             var habitDefinitionEntries = await _dynamoDbContext.QueryWithEmptyBeginsWithAsync<HabitDefinitionEntry>(userId);
             var doneHabitEntries = await GetDoneHabitEntriesAsync(userId);
             var habitRecords = habitDefinitionEntries.Select(habitDefinitionEntry =>
-            new HabitRecord
             {
-                HabitId = habitDefinitionEntry.HabitId,
-                Name = habitDefinitionEntry.Name,
-                Dates = doneHabitEntries
+                var dates = doneHabitEntries
                     .Where(doneHabitEntry => doneHabitEntry.DoneHabitPointer.HabitId == habitDefinitionEntry.HabitId)
-                    .Select(doneHabitEntry => doneHabitEntry.DoneHabitPointer.Date).ToList()
+                    .Select(doneHabitEntry => doneHabitEntry.DoneHabitPointer.Date).ToList();
+                return new HabitRecord
+                {
+                    HabitId = habitDefinitionEntry.HabitId,
+                    Name = habitDefinitionEntry.Name,
+                    Dates = dates,
+                    DoneCount = dates.Count
+                };
             }).ToList();
             return habitRecords;
         }
