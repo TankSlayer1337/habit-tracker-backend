@@ -37,6 +37,12 @@ namespace HabitTracker.Habits
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
             var habitDefinitionEntry = await GetHabitDefinitionAsync(userId, habitId);
+            var doneHabitEntries = await GetDoneHabitEntriesAsync(userId);
+            var affectedDoneHabitEntries = doneHabitEntries.Where(entry => entry.DoneHabitPointer.HabitId == habitId);
+            foreach (var entry in affectedDoneHabitEntries)
+            {
+                await _dynamoDbContext.DeleteAsync(entry);
+            }
             await _dynamoDbContext.DeleteAsync(habitDefinitionEntry);
         }
 
