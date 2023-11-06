@@ -1,12 +1,10 @@
-﻿using HabitTracker.DynamoDb.PropertyConverters;
-using System.ComponentModel.DataAnnotations;
+﻿using HabitTracker.Controllers.Outputs;
 
 namespace HabitTracker.Controllers.Requests
 {
     public class DoneHabitRequest
     {
         public string HabitId { get; init; } = string.Empty;
-        [RegularExpression(PropertyConverterConstants.DatePattern)]
-        public string Date { get; init; } = string.Empty;
+        public Date Date { get; init; } = new Date(DateTime.Now);
     }
 }

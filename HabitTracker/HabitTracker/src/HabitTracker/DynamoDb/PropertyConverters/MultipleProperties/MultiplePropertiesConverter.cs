@@ -46,7 +46,7 @@ namespace HabitTracker.DynamoDb.PropertyConverters.MultipleProperties
 
         public DynamoDBEntry ToEntry(object value)
         {
-            var model = value as T ?? throw new ArgumentOutOfRangeException();
+            var model = value as T ?? throw new ArgumentOutOfRangeException($"Failed to cast {value} to {typeof(T)}");
             var orderedValues = ToOrderedValues(model);
             var data = string.Empty;
             for (var i = 0; i < PropertyDefinitions.Length; i++)
