@@ -29,7 +29,7 @@ namespace HabitTracker.Habits
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
             var habitDefinitionEntry = await GetHabitDefinitionAsync(userId, request.HabitId);
-            var updatedEntry = habitDefinitionEntry.CopyWithNewValues(request);
+            var updatedEntry = habitDefinitionEntry.CloneWithNewName(request.Name);
             await _dynamoDbContext.SaveAsync(updatedEntry);
         }
 
@@ -37,9 +37,8 @@ namespace HabitTracker.Habits
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
             var habitDefinitionEntry = await GetHabitDefinitionAsync(userId, habitId);
-            var doneHabitEntries = await GetDoneHabitEntriesAsync(userId);
-            var affectedDoneHabitEntries = doneHabitEntries.Where(entry => entry.DoneHabitPointer.HabitId == habitId);
-            foreach (var entry in affectedDoneHabitEntries)
+            var doneHabitEntries = await GetAllHabitMonthRecordEntriesAsync(userId, habitId);
+            foreach (var entry in doneHabitEntries)
             {
                 await _dynamoDbContext.DeleteAsync(entry);
             }
@@ -49,69 +48,137 @@ namespace HabitTracker.Habits
         public async Task<List<HabitDefinition>> GetHabitDefinitions(string authorizationHeader)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            var habitDefinitionEntries = await _dynamoDbContext.QueryWithEmptyBeginsWithAsync<HabitDefinitionEntry>(userId);
+            var partitionKey = new HabitPartitionKey
+            {
+                UserId = userId,
+                ItemType = HabitDefinitionEntry.ItemType
+            };
+            var habitDefinitionEntries = await _dynamoDbContext.QueryWithEmptyBeginsWithAsync<HabitDefinitionEntry>(partitionKey);
             var habitDefinitions = habitDefinitionEntries.Select(entry => entry.Convert()).ToList();
             return habitDefinitions;
         }
 
+        // TODO: add retry logic to protect agains concurrency.
         public async Task RegisterDoneHabit(string authorizationHeader, DoneHabitRequest request)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
             _ = await GetHabitDefinitionAsync(userId, request.HabitId);
-            var doneHabitEntry = DoneHabitEntry.Create(userId, request);
-            await _dynamoDbContext.SaveAsync(doneHabitEntry);
+            var date = request.Date;
+            var pointer = new HabitMonthRecordPointer(request.HabitId, date.Year, date.Month);
+            var habitMonthRecordEntries = await GetHabitMonthRecordEntries(userId, pointer);
+            if (habitMonthRecordEntries == null || !habitMonthRecordEntries.Any())
+            {
+                var newEntry = CreateHabitMonthRecordEntry(userId, request);
+                await _dynamoDbContext.SaveAsync(newEntry);
+                return;
+            }
+            var updatedEntry = habitMonthRecordEntries.Single();
+            if (updatedEntry.Dates.Contains(date.Day))
+                return;
+            updatedEntry.Dates.Add(date.Day);
+            await _dynamoDbContext.SaveAsync(updatedEntry);
         }
 
+        private HabitMonthRecordEntry CreateHabitMonthRecordEntry(string userId, DoneHabitRequest request)
+        {
+            return new HabitMonthRecordEntry
+            {
+                PartitionKey = HabitMonthRecordEntry.CreatePartitionKey(userId),
+                Pointer = new HabitMonthRecordPointer(request.HabitId, request.Date.Year, request.Date.Month),
+                Dates = new List<int> { request.Date.Day }
+            };
+        }
+
+        // TODO: add retry logic to protect against concurrency.
         public async Task DeleteDoneHabit(string authorizationHeader, DoneHabitRequest request)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            var pointer = new DoneHabitPointer { Date = request.Date, HabitId = request.HabitId };
-            var doneHabitEntries = await _dynamoDbContext.QueryAsync<DoneHabitEntry>(userId, QueryOperator.Equal, new DoneHabitPointer[] { pointer });
-            if (doneHabitEntries == null || !doneHabitEntries.Any())
+            var date = request.Date;
+            var pointer = HabitMonthRecordPointer.Create(request);
+            var habitMonthRecordEntries = await GetHabitMonthRecordEntries(userId, pointer);
+            if (habitMonthRecordEntries == null || !habitMonthRecordEntries.Any())
             {
-                throw new BadHttpRequestException($"{nameof(DoneHabitEntry)} with ID {request.HabitId} and Date {request.Date} was not found in the database.");
+                throw new BadHttpRequestException($"Record of done habit with ID {request.HabitId} and Date {date.Year}-{date.Month}-{date.Day} was not found in the database.");
             }
-            var doneHabitEntry = doneHabitEntries.Single();
-            await _dynamoDbContext.DeleteAsync(doneHabitEntry);
-        }
-
-        public async Task<List<DoneHabitPointer>> GetDoneHabits(string authorizationHeader)
-        {
-            var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            var doneHabitEntries = await GetDoneHabitEntriesAsync(userId);
-            var pointers = doneHabitEntries.Select(entry => entry.DoneHabitPointer).ToList();
-            return pointers;
-        }
-
-        public async Task<List<HabitRecord>> GetHabitRecords(string authorizationHeader)
-        {
-            var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            var habitDefinitionEntries = await _dynamoDbContext.QueryWithEmptyBeginsWithAsync<HabitDefinitionEntry>(userId);
-            var doneHabitEntries = await GetDoneHabitEntriesAsync(userId);
-            var habitRecords = habitDefinitionEntries.Select(habitDefinitionEntry =>
+            var updatedEntry = habitMonthRecordEntries.Single();
+            if (updatedEntry.Dates.Remove(date.Day))
             {
-                var dates = doneHabitEntries
-                    .Where(doneHabitEntry => doneHabitEntry.DoneHabitPointer.HabitId == habitDefinitionEntry.HabitId)
-                    .Select(doneHabitEntry => doneHabitEntry.DoneHabitPointer.Date).ToList();
-                return new HabitRecord
+                if (updatedEntry.Dates.Any())
                 {
-                    HabitId = habitDefinitionEntry.HabitId,
-                    Name = habitDefinitionEntry.Name,
-                    Dates = dates,
-                    DoneCount = dates.Count
-                };
-            }).ToList();
+                    await _dynamoDbContext.SaveAsync(updatedEntry);
+                } else
+                {
+                    await _dynamoDbContext.DeleteAsync(updatedEntry);
+                }                
+                return;
+            }
+        }
+
+        private async Task<List<HabitMonthRecordEntry>> GetHabitMonthRecordEntries(string userId, HabitMonthRecordPointer pointer)
+        {
+            var partitionKey = HabitMonthRecordEntry.CreatePartitionKey(userId);
+            var sortKeyValues = new HabitMonthRecordPointer[] { pointer };
+            return await _dynamoDbContext.QueryAsync<HabitMonthRecordEntry>(partitionKey, QueryOperator.Equal, sortKeyValues);
+        }
+
+        public async Task<List<HabitRecord>> GetHabitRecordsForPastWeek(string authorizationHeader)
+        {
+            var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
+            var habitDefinitions = await GetHabitDefinitions(authorizationHeader);
+            var end = DateTime.Now;
+            var start = end.AddDays(-6);
+            var pastWeeksDates = GetDatesBetween(start, end);
+            var targetYearMonths = pastWeeksDates.DistinctBy(date => date.Month).ToList();
+
+            var habitRecords = new List<HabitRecord>();
+            foreach (var habitDefinition in habitDefinitions)
+            {
+                var habitMonthRecordEntries = await GetAllHabitMonthRecordEntriesAsync(userId, habitDefinition.HabitId);
+                var allTimeDoneDatesCount = habitMonthRecordEntries.Select(entry => entry.Dates.Count).Sum();
+                var doneDates = new List<Date>();
+                targetYearMonths.ForEach(yearMonth =>
+                {
+                    var habitMonthRecordEntry = habitMonthRecordEntries.Where(entry => entry.Pointer.Year == yearMonth.Year && entry.Pointer.Month == yearMonth.Month);
+                    if (habitMonthRecordEntry.Any())
+                    {
+                        var targetDates = pastWeeksDates
+                        .Where(date => date.Year == yearMonth.Year && date.Month == yearMonth.Month)
+                        .Select(date => date.Day);
+                        var dates = habitMonthRecordEntry.Single().Dates.Where(date => targetDates.Contains(date)).Select(date => new Date(yearMonth.Year, yearMonth.Month, date));
+                        doneDates.AddRange(dates);
+                    }
+                });
+                habitRecords.Add(new HabitRecord(habitDefinition, allTimeDoneDatesCount, new Date(start), new Date(end), doneDates));
+            }
             return habitRecords;
         }
 
-        private async Task<List<DoneHabitEntry>> GetDoneHabitEntriesAsync(string userId)
+        private async Task<List<HabitMonthRecordEntry>> GetAllHabitMonthRecordEntriesAsync(string userId, string habitId)
         {
-            return await _dynamoDbContext.QueryAsync<DoneHabitEntry>(userId, QueryOperator.BeginsWith, new DoneHabitPointer[] { new DoneHabitPointer() });
+            var partitionKey = HabitMonthRecordEntry.CreatePartitionKey(userId);
+            var sortKeyValues = new HabitMonthRecordPointer[] { new HabitMonthRecordPointer(habitId) };
+            var habitMonthRecordEntries = await _dynamoDbContext.QueryAsync<HabitMonthRecordEntry>(partitionKey, QueryOperator.BeginsWith, sortKeyValues);
+            return habitMonthRecordEntries;
+        }
+
+        private List<Date> GetDatesBetween(DateTime start, DateTime end)
+        {
+            var dates = new List<Date>();
+            for (var date = start; date <= end; date = date.AddDays(1))
+            {
+                dates.Add(new Date(date));
+            }
+            return dates;
         }
 
         private async Task<HabitDefinitionEntry> GetHabitDefinitionAsync(string userId, string habitId)
         {
-            var habits = await _dynamoDbContext.QueryAsync<HabitDefinitionEntry>(userId, QueryOperator.Equal, new string[] { habitId });
+            var partitionKey = new HabitPartitionKey
+            {
+                UserId = userId,
+                ItemType = HabitDefinitionEntry.ItemType
+            };
+            var habits = await _dynamoDbContext.QueryAsync<HabitDefinitionEntry>(partitionKey, QueryOperator.Equal, new string[] { habitId });
             if (habits == null || !habits.Any())
             {
                 throw new BadHttpRequestException($"Habit with ID {habitId} was not found in the database.");
