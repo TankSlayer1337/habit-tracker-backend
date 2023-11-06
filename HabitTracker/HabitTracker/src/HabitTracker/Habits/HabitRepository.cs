@@ -58,7 +58,6 @@ namespace HabitTracker.Habits
             return habitDefinitions;
         }
 
-        // TODO: add retry logic to protect agains concurrency.
         public async Task RegisterDoneHabit(string authorizationHeader, DoneHabitRequest request)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
@@ -72,11 +71,36 @@ namespace HabitTracker.Habits
                 await _dynamoDbContext.SaveAsync(newEntry);
                 return;
             }
-            var updatedEntry = habitMonthRecordEntries.Single();
-            if (updatedEntry.Dates.Contains(date.Day))
+            var entry = habitMonthRecordEntries.Single();
+            await UpdateEntryWithNewDay(entry, date.Day);
+        }
+
+        private async Task UpdateEntryWithNewDay(HabitMonthRecordEntry entry, int dayToAdd)
+        {
+            if (entry.Dates.Contains(dayToAdd))
                 return;
-            updatedEntry.Dates.Add(date.Day);
-            await _dynamoDbContext.SaveAsync(updatedEntry);
+            entry.Dates.Add(dayToAdd);
+            for (var i = 0; i < 10; i++)
+            {
+                try
+                {
+                    await _dynamoDbContext.SaveAsync(entry);
+                    return;
+                } catch
+                {
+                    var latestEntries = await _dynamoDbContext.QueryAsync<HabitMonthRecordEntry>(entry.PartitionKey, QueryOperator.Equal, new HabitMonthRecordPointer[] { entry.Pointer });
+                    if (latestEntries == null || !latestEntries.Any())
+                    {
+                        entry.VersionNumber = null;
+                        continue;
+                    }
+                    entry = latestEntries.Single();
+                    if (entry.Dates.Contains(dayToAdd))
+                        return;
+                    entry.Dates.Add(dayToAdd);
+                }
+            }
+            throw new Exception($"Failed to add done date {entry.Pointer.Year}-{entry.Pointer.Month}-{dayToAdd} to Habit with ID ${entry.Pointer.HabitId}.");
         }
 
         private HabitMonthRecordEntry CreateHabitMonthRecordEntry(string userId, DoneHabitRequest request)
