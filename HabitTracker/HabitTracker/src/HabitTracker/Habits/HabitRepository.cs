@@ -18,17 +18,17 @@ namespace HabitTracker.Habits
             _dynamoDbContext = dynamoDbContext;
         }
 
-        public async Task CreateHabit2(string authorizationHeader, string habitName)
+        public async Task CreateHabit(string authorizationHeader, string habitName)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
             var habitDefinitionEntry = HabitDefinitionEntry.Create(userId, habitName);
             await _dynamoDbContext.SaveAsync(habitDefinitionEntry);
         }
 
-        public async Task UpdateHabit2(string authorizationHeader, UpdateHabitRequest request)
+        public async Task UpdateHabit(string authorizationHeader, UpdateHabitRequest request)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            var habitDefinitionEntry = await GetHabitDefinitionAsync2(userId, request.HabitId);
+            var habitDefinitionEntry = await GetHabitDefinitionAsync(userId, request.HabitId);
             var updatedEntry = habitDefinitionEntry.CloneWithNewName(request.Name);
             await _dynamoDbContext.SaveAsync(updatedEntry);
         }
@@ -36,7 +36,7 @@ namespace HabitTracker.Habits
         public async Task DeleteHabit(string authorizationHeader, string habitId)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            var habitDefinitionEntry = await GetHabitDefinitionAsync2(userId, habitId);
+            var habitDefinitionEntry = await GetHabitDefinitionAsync(userId, habitId);
             var doneHabitEntries = await GetAllHabitMonthRecordEntriesAsync(userId, habitId);
             foreach (var entry in doneHabitEntries)
             {
@@ -45,7 +45,7 @@ namespace HabitTracker.Habits
             await _dynamoDbContext.DeleteAsync(habitDefinitionEntry);
         }
 
-        public async Task<List<HabitDefinition>> GetHabitDefinitions2(string authorizationHeader)
+        public async Task<List<HabitDefinition>> GetHabitDefinitions(string authorizationHeader)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
             var partitionKey = new HabitPartitionKey
@@ -62,7 +62,7 @@ namespace HabitTracker.Habits
         public async Task RegisterDoneHabit(string authorizationHeader, DoneHabitRequest request)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            _ = await GetHabitDefinitionAsync2(userId, request.HabitId);
+            _ = await GetHabitDefinitionAsync(userId, request.HabitId);
             var date = request.Date;
             var pointer = new HabitMonthRecordPointer(request.HabitId, date.Year, date.Month);
             var habitMonthRecordEntries = await GetHabitMonthRecordEntries(userId, pointer);
@@ -124,7 +124,7 @@ namespace HabitTracker.Habits
         public async Task<List<HabitRecord>> GetHabitRecordsForPastWeek(string authorizationHeader)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            var habitDefinitions = await GetHabitDefinitions2(authorizationHeader);
+            var habitDefinitions = await GetHabitDefinitions(authorizationHeader);
             var end = DateTime.Now;
             var start = end.AddDays(-6);
             var pastWeeksDates = GetDatesBetween(start, end);
@@ -171,7 +171,7 @@ namespace HabitTracker.Habits
             return dates;
         }
 
-        private async Task<HabitDefinitionEntry> GetHabitDefinitionAsync2(string userId, string habitId)
+        private async Task<HabitDefinitionEntry> GetHabitDefinitionAsync(string userId, string habitId)
         {
             var partitionKey = new HabitPartitionKey
             {

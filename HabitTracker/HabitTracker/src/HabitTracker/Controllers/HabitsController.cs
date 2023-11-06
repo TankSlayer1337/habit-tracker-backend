@@ -27,14 +27,14 @@ namespace HabitTracker.Controllers
         public async Task CreateHabit([FromBody] CreateHabitRequest request)
         {
             var authorizationHeader = GetAuthorizationHeader(Request);
-            await _habitRepository.CreateHabit2(authorizationHeader, request.Name);
+            await _habitRepository.CreateHabit(authorizationHeader, request.Name);
         }
 
         [HttpPost("update")]
         public async Task UpdateHabit([FromBody] UpdateHabitRequest request)
         {
             var authorizationHeader = GetAuthorizationHeader(Request);
-            await _habitRepository.UpdateHabit2(authorizationHeader, request);
+            await _habitRepository.UpdateHabit(authorizationHeader, request);
         }
 
         [HttpDelete("{habitId}")]
