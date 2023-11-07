@@ -58,7 +58,6 @@ namespace HabitTracker.Habits
             return habitDefinitions;
         }
 
-        // TODO: add retry logic to protect agains concurrency.
         public async Task RegisterDoneHabit(string authorizationHeader, DoneHabitRequest request)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
@@ -72,11 +71,62 @@ namespace HabitTracker.Habits
                 await _dynamoDbContext.SaveAsync(newEntry);
                 return;
             }
-            var updatedEntry = habitMonthRecordEntries.Single();
-            if (updatedEntry.Dates.Contains(date.Day))
-                return;
-            updatedEntry.Dates.Add(date.Day);
-            await _dynamoDbContext.SaveAsync(updatedEntry);
+            var entry = habitMonthRecordEntries.Single();
+            await AddDayToRecord(entry, date.Day);
+        }
+
+        private async Task AddDayToRecord(HabitMonthRecordEntry entry, int day)
+        {
+            for (var i = 0; i < 10; i++)
+            {
+                if (entry.Dates.Contains(day))
+                    return;
+                entry.Dates.Add(day);
+                try
+                {
+                    await _dynamoDbContext.SaveAsync(entry);
+                    return;
+                } catch
+                {
+                    var latestEntries = await _dynamoDbContext.QueryAsync<HabitMonthRecordEntry>(entry.PartitionKey, QueryOperator.Equal, new HabitMonthRecordPointer[] { entry.Pointer });
+                    if (latestEntries == null || !latestEntries.Any())
+                    {
+                        entry.VersionNumber = null;
+                        continue;
+                    }
+                    entry = latestEntries.Single();
+                }
+            }
+            throw new Exception($"Failed to add done date {entry.Pointer.Year}-{entry.Pointer.Month}-{day} to Habit with ID ${entry.Pointer.HabitId}.");
+        }
+
+        private async Task RemoveDayFromRecord(HabitMonthRecordEntry entry, int day)
+        {
+            for (var i = 0; i < 10; i++)
+            {
+                if (!entry.Dates.Contains(day))
+                    return;
+                entry.Dates.Remove(day);
+                try
+                {
+                    if (entry.Dates.Any())
+                    {
+                        await _dynamoDbContext.SaveAsync(entry);
+                    }
+                    else
+                    {
+                        await _dynamoDbContext.DeleteAsync(entry);
+                    }
+                }
+                catch
+                {
+                    var latestEntries = await _dynamoDbContext.QueryAsync<HabitMonthRecordEntry>(entry.PartitionKey, QueryOperator.Equal, new HabitMonthRecordPointer[] { entry.Pointer });
+                    if (latestEntries == null || !latestEntries.Any())
+                        return;
+                    entry = latestEntries.Single();
+                }
+            }
+            throw new Exception($"Failed to remove done date {entry.Pointer.Year}-{entry.Pointer.Month}-{day} from Habit with ID ${entry.Pointer.HabitId}.");
         }
 
         private HabitMonthRecordEntry CreateHabitMonthRecordEntry(string userId, DoneHabitRequest request)
@@ -89,7 +139,6 @@ namespace HabitTracker.Habits
             };
         }
 
-        // TODO: add retry logic to protect against concurrency.
         public async Task DeleteDoneHabit(string authorizationHeader, DoneHabitRequest request)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
@@ -100,18 +149,8 @@ namespace HabitTracker.Habits
             {
                 throw new BadHttpRequestException($"Record of done habit with ID {request.HabitId} and Date {date.Year}-{date.Month}-{date.Day} was not found in the database.");
             }
-            var updatedEntry = habitMonthRecordEntries.Single();
-            if (updatedEntry.Dates.Remove(date.Day))
-            {
-                if (updatedEntry.Dates.Any())
-                {
-                    await _dynamoDbContext.SaveAsync(updatedEntry);
-                } else
-                {
-                    await _dynamoDbContext.DeleteAsync(updatedEntry);
-                }                
-                return;
-            }
+            var entry = habitMonthRecordEntries.Single();
+            await RemoveDayFromRecord(entry, date.Day);
         }
 
         private async Task<List<HabitMonthRecordEntry>> GetHabitMonthRecordEntries(string userId, HabitMonthRecordPointer pointer)
