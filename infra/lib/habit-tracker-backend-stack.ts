@@ -40,7 +40,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
       handler: 'HabitTracker',
       timeout: cdk.Duration.seconds(10),
       memorySize: 256,
-      reservedConcurrentExecutions: 2,
+      reservedConcurrentExecutions: 10,
       environment: {
         'TABLE_NAME': table.tableName,
         'USERINFO_ENDPOINT_URL': `https://${stageConfig.cognitoHostedUiDomainPrefix}.auth.${this.region}.amazoncognito.com/oauth2/userInfo`
