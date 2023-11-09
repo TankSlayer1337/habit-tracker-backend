@@ -1,4 +1,5 @@
 ﻿using Amazon.DynamoDBv2.DataModel;
+using HabitTracker.Controllers.Outputs;
 using HabitTracker.DynamoDb.PropertyConverters.MultipleProperties.Implementations;
 
 namespace HabitTracker.DynamoDb.Models
@@ -24,6 +25,11 @@ namespace HabitTracker.DynamoDb.Models
                 UserId = userId,
                 ItemType = "HabitMonthRecordEntry"
             };
+        }
+
+        public bool ContainsDate(Date date)
+        {
+            return (date.Year == Pointer.Year && date.Month == Pointer.Month && Dates.Contains(date.Day));
         }
     }
 }
