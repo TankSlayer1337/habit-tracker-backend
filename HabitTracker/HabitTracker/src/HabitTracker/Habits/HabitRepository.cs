@@ -160,6 +160,57 @@ namespace HabitTracker.Habits
             return await _dynamoDbContext.QueryAsync<HabitMonthRecordEntry>(partitionKey, QueryOperator.Equal, sortKeyValues);
         }
 
+        public async Task<ChartData> GetChartData(string authorizationHeader, string habitId)
+        {
+            var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
+            _ = await GetHabitDefinitionAsync(userId, habitId);
+            var habitRecords = await GetAllHabitMonthRecordEntriesAsync(userId, habitId);
+            if (habitRecords == null || !habitRecords.Any())
+            {
+                return ChartData.CreateEmpty();
+            }
+            var oldestRecord = GetOldestRecord(habitRecords);
+            var start = GetOldestDateTime(oldestRecord).AddDays(-1);
+            var end = DateTime.Now;
+            var dates = GetDatesBetween(start, end);
+            var sum = 0;
+            var valuesColumn = new List<int>();
+            foreach (var date in dates)
+            {
+                // this could probably be sped up by only looking in the relevant records.
+                // possibly removing records which are no longer relevant.
+                if (habitRecords.Any(record => record.ContainsDate(date)))
+                {
+                    sum++;
+                }
+                valuesColumn.Add(sum);
+            }
+            var dateColumn = dates.Select(date => $"{date.Year}-{date.Month}-{date.Day}").ToList();
+            return new ChartData(dateColumn, valuesColumn);
+        }
+
+        private static DateTime GetOldestDateTime(HabitMonthRecordEntry record)
+        {
+            const string errorSuffix = " was null.";
+            var year = record.Pointer.Year ?? throw new Exception("Year" + errorSuffix);
+            var month = record.Pointer.Month ?? throw new Exception("Month" + errorSuffix);
+            var day = record.Dates.Min();
+            return new DateTime(year, month, day);
+        }
+
+        private static HabitMonthRecordEntry GetOldestRecord(List<HabitMonthRecordEntry> entries)
+        {
+            var oldestEntry = entries.First();
+            foreach (var entry in entries)
+            {
+                if (entry.Pointer.Year < oldestEntry.Pointer.Year && entry.Pointer.Month < oldestEntry.Pointer.Month)
+                {
+                    oldestEntry = entry;
+                }
+            }
+            return oldestEntry;
+        }
+
         public async Task<List<HabitRecord>> GetHabitRecordsForPastWeek(string authorizationHeader)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
