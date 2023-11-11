@@ -185,7 +185,7 @@ namespace HabitTracker.Habits
                 }
                 valuesColumn.Add(sum);
             }
-            var dateColumn = dates.Select(date => $"{date.Year}-{date.Month}-{date.Day}").ToList();
+            var dateColumn = dates.Select(date => $"{date.Year}/{date.Month}/{date.Day}").ToList();
             return new ChartData(dateColumn, valuesColumn);
         }
 
