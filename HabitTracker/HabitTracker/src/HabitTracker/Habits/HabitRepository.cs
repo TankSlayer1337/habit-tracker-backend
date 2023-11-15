@@ -3,6 +3,8 @@ using HabitTracker.Controllers.Outputs;
 using HabitTracker.Controllers.Requests;
 using HabitTracker.DynamoDb;
 using HabitTracker.DynamoDb.Models;
+using HabitTracker.Habits.Extensions;
+using HabitTracker.Habits.SupportModels;
 using HabitTracker.UserInfo;
 
 namespace HabitTracker.Habits
@@ -48,6 +50,11 @@ namespace HabitTracker.Habits
         public async Task<List<HabitDefinition>> GetHabitDefinitions(string authorizationHeader)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
+            return await GetHabitDefinitionsByUserId(userId);
+        }
+
+        private async Task<List<HabitDefinition>> GetHabitDefinitionsByUserId(string userId)
+        {
             var partitionKey = new HabitPartitionKey
             {
                 UserId = userId,
@@ -61,7 +68,7 @@ namespace HabitTracker.Habits
         public async Task RegisterDoneHabit(string authorizationHeader, DoneHabitRequest request)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            _ = await GetHabitDefinitionAsync(userId, request.HabitId);
+            await VerifyHabitExists(userId, request.HabitId);
             var date = request.Date;
             var pointer = new HabitMonthRecordPointer(request.HabitId, date.Year, date.Month);
             var habitMonthRecordEntries = await GetHabitMonthRecordEntries(userId, pointer);
@@ -129,7 +136,7 @@ namespace HabitTracker.Habits
             throw new Exception($"Failed to remove done date {entry.Pointer.Year}-{entry.Pointer.Month}-{day} from Habit with ID ${entry.Pointer.HabitId}.");
         }
 
-        private HabitMonthRecordEntry CreateHabitMonthRecordEntry(string userId, DoneHabitRequest request)
+        private static HabitMonthRecordEntry CreateHabitMonthRecordEntry(string userId, DoneHabitRequest request)
         {
             return new HabitMonthRecordEntry
             {
@@ -163,39 +170,73 @@ namespace HabitTracker.Habits
         public async Task<ChartData> GetChartData(string authorizationHeader, string habitId)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            _ = await GetHabitDefinitionAsync(userId, habitId);
+            await VerifyHabitExists(userId, habitId);
             var habitRecords = await GetAllHabitMonthRecordEntriesAsync(userId, habitId);
             if (habitRecords == null || !habitRecords.Any())
             {
-                return ChartData.CreateEmpty();
+                return new ChartData();
             }
-            var oldestRecord = GetOldestRecord(habitRecords);
-            var start = GetOldestDateTime(oldestRecord).AddDays(-1);
-            var end = DateTime.Now;
-            var dates = GetDatesBetween(start, end);
-            var sum = 0;
-            var valuesColumn = new List<int>();
-            foreach (var date in dates)
+            return GetChartData(habitRecords);
+        }
+
+        private static ChartData GetChartData(List<HabitMonthRecordEntry> habitRecords)
+        {
+            var dates = GetDatesInChronologicalOrder(habitRecords);
+            var chartData = new ChartData();
+            var dayBeforeFirstRecordedHabit = dates[0].AddDays(-1);
+            dates.Insert(0, dayBeforeFirstRecordedHabit);
+            chartData.Add(dates[0], 0);
+            var doneCount = 0;
+            for (var i = 1; i < dates.Count; i++)
             {
-                // this could probably be sped up by only looking in the relevant records.
-                // possibly removing records which are no longer relevant.
-                if (habitRecords.Any(record => record.ContainsDate(date)))
+                if (!dates[i - 1].IsTheDayBefore(dates[i]))
                 {
-                    sum++;
+                    var previousDate = dates[i].AddDays(-1);
+                    chartData.Add(previousDate, doneCount);
                 }
-                valuesColumn.Add(sum);
+                doneCount++;
+                chartData.Add(dates[i], doneCount);
             }
-            var dateColumn = dates.Select(date => $"{date.Year}/{date.Month}/{date.Day}").ToList();
-            return new ChartData(dateColumn, valuesColumn);
+            if (dates.Last().Date != DateTime.Today)
+            {
+                chartData.Add(DateTime.Today, doneCount);
+            }
+            return chartData;
+        }
+
+        private static List<DateTime> GetDatesInChronologicalOrder(List<HabitMonthRecordEntry> habitMonthRecords)
+        {
+            var dates = new List<DateTime>();
+            foreach (var habitMonthRecord in habitMonthRecords)
+            {
+                (var year, var month) = GetYearMonth(habitMonthRecord);
+                var recordedDates = habitMonthRecord.Dates.Select(date => new DateTime(year, month, date));
+                dates.AddRange(recordedDates);
+            }
+            var orderedDates = dates.OrderBy(date => date.Year).ThenBy(date => date.Month).ThenBy(date => date.Day).ToList();
+            return orderedDates;
+        }
+
+        private static DateTime GetOldestRecordedDate(List<HabitMonthRecordEntry> habitMonthRecords)
+        {
+            var oldestRecord = GetOldestRecord(habitMonthRecords);
+            return GetOldestDateTime(oldestRecord);
         }
 
         private static DateTime GetOldestDateTime(HabitMonthRecordEntry record)
         {
-            const string errorSuffix = " was null.";
-            var year = record.Pointer.Year ?? throw new Exception("Year" + errorSuffix);
-            var month = record.Pointer.Month ?? throw new Exception("Month" + errorSuffix);
+            (var year, var month) = GetYearMonth(record);
             var day = record.Dates.Min();
             return new DateTime(year, month, day);
+        }
+
+        private static (int year, int month) GetYearMonth(HabitMonthRecordEntry habitMonthRecord)
+        {
+            const string errorSuffix = " was null.";
+            var year = habitMonthRecord.Pointer.Year ?? throw new Exception("Year" + errorSuffix);
+            var month = habitMonthRecord.Pointer.Month ?? throw new Exception("Month" + errorSuffix);
+            return (year, month);
+
         }
 
         private static HabitMonthRecordEntry GetOldestRecord(List<HabitMonthRecordEntry> entries)
@@ -214,34 +255,36 @@ namespace HabitTracker.Habits
         public async Task<List<HabitRecord>> GetHabitRecordsForPastWeek(string authorizationHeader)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
-            var habitDefinitions = await GetHabitDefinitions(authorizationHeader);
             var end = DateTime.Now;
             var start = end.AddDays(-6);
-            var pastWeeksDates = GetDatesBetween(start, end);
-            var targetYearMonths = pastWeeksDates.DistinctBy(date => date.Month).ToList();
+            return await GetHabitRecordsForPeriod(userId, start, end);
+        }
 
+        private async Task<List<HabitRecord>> GetHabitRecordsForPeriod(string userId, DateTime start, DateTime end)
+        {
+            var habitDefinitions = await GetHabitDefinitionsByUserId(userId);
+            var timeRecord = TimeRecord.CreateWithDatesBetween(start, end);
             var habitRecords = new List<HabitRecord>();
             foreach (var habitDefinition in habitDefinitions)
             {
                 var habitMonthRecordEntries = await GetAllHabitMonthRecordEntriesAsync(userId, habitDefinition.HabitId);
                 var allTimeDoneDatesCount = habitMonthRecordEntries.Select(entry => entry.Dates.Count).Sum();
-                var doneDates = new List<Date>();
-                targetYearMonths.ForEach(yearMonth =>
-                {
-                    var habitMonthRecordEntry = habitMonthRecordEntries.Where(entry => entry.Pointer.Year == yearMonth.Year && entry.Pointer.Month == yearMonth.Month);
-                    if (habitMonthRecordEntry.Any())
-                    {
-                        var targetDates = pastWeeksDates
-                        .Where(date => date.Year == yearMonth.Year && date.Month == yearMonth.Month)
-                        .Select(date => date.Day);
-                        var dates = habitMonthRecordEntry.Single().Dates.Where(date => targetDates.Contains(date)).Select(date => new Date(yearMonth.Year, yearMonth.Month, date));
-                        doneDates.AddRange(dates);
-                    }
-                });
+                var doneDates = timeRecord.GetIntersectingDates(habitMonthRecordEntries);
                 habitRecords.Add(new HabitRecord(habitDefinition, allTimeDoneDatesCount, new Date(start), new Date(end), doneDates));
             }
             return habitRecords;
         }
+
+        //public async Task<List<HabitMetrics>> GetHabitMetrics(string authorizationHeader)
+        //{
+        //    var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
+        //    var habitDefinitions = await GetHabitDefinitions(authorizationHeader);
+        //    var metrics = new List<HabitMetrics>();
+        //    foreach (var definition in habitDefinitions)
+        //    {
+        //        var habitMonthRecordEntries = await GetAllHabitMonthRecordEntriesAsync(userId, habitDefinition.HabitId);
+        //    }
+        //}
 
         private async Task<List<HabitMonthRecordEntry>> GetAllHabitMonthRecordEntriesAsync(string userId, string habitId)
         {
@@ -251,14 +294,9 @@ namespace HabitTracker.Habits
             return habitMonthRecordEntries;
         }
 
-        private List<Date> GetDatesBetween(DateTime start, DateTime end)
+        private async Task VerifyHabitExists(string userId, string habitId)
         {
-            var dates = new List<Date>();
-            for (var date = start; date <= end; date = date.AddDays(1))
-            {
-                dates.Add(new Date(date));
-            }
-            return dates;
+            await GetHabitDefinitionAsync(userId, habitId);
         }
 
         private async Task<HabitDefinitionEntry> GetHabitDefinitionAsync(string userId, string habitId)

@@ -16,6 +16,13 @@ namespace HabitTracker.Controllers
             _habitRepository = habitRepository;
         }
 
+        //[HttpGet]
+        //public async Task<HabitMetrics> GetHabitMetrics()
+        //{
+        //    var authorizationHeader = GetAuthorizationHeader(Request);
+
+        //}
+
         [HttpGet("chart/{habitId}")]
         public async Task<ChartData> GetChartData(string habitId)
         {
