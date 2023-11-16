@@ -20,7 +20,7 @@ namespace HabitTracker.Controllers
         public async Task<List<HabitRecord>> GetHabitRecords()
         {
             var authorizationHeader = GetAuthorizationHeader(Request);
-            return await _habitRepository.GetHabitMetricsForPastWeek(authorizationHeader);
+            return await _habitRepository.GetHabitRecordsForPastWeek(authorizationHeader);
         }
 
         [HttpPost]

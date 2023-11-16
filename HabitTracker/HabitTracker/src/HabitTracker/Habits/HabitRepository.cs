@@ -4,7 +4,6 @@ using HabitTracker.Controllers.Requests;
 using HabitTracker.DynamoDb;
 using HabitTracker.DynamoDb.Models;
 using HabitTracker.Habits.Extensions;
-using HabitTracker.Habits.SupportModels;
 using HabitTracker.UserInfo;
 
 namespace HabitTracker.Habits
@@ -208,29 +207,44 @@ namespace HabitTracker.Habits
 
         }
 
-        public async Task<List<HabitRecord>> GetHabitMetricsForPastWeek(string authorizationHeader)
+        public async Task<List<HabitRecord>> GetHabitRecordsForPastWeek(string authorizationHeader)
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
             var end = DateTime.Now.Date;
-            var start = end.AddDays(-6);
+            var start = end.AddDays(-6).Date;
             return await GetHabitRecordsForPeriod(userId, start, end);
         }
 
         private async Task<List<HabitRecord>> GetHabitRecordsForPeriod(string userId, DateTime start, DateTime end)
         {
             var habitDefinitions = await GetHabitDefinitionsByUserId(userId);
-            var timeRecord = TimeRecord.CreateWithDatesBetween(start, end);
-            var metrics = new List<HabitRecord>();
+            var habitRecords = new List<HabitRecord>();
             foreach (var definition in habitDefinitions)
             {
                 var habitMonthRecordEntries = await GetAllHabitMonthRecordEntriesAsync(userId, definition.HabitId);
                 var allTimeDoneDatesCount = habitMonthRecordEntries.Select(entry => entry.Dates.Count).Sum();
-                // TODO: instead of using intersecting dates, compare with start and end and get all in-between.
-                var doneDates = timeRecord.GetIntersectingDates(habitMonthRecordEntries);
+                var doneDates = GetDoneDatesInRange(habitMonthRecordEntries, start, end);
                 var chartData = GetChartData(habitMonthRecordEntries);
-                metrics.Add(new HabitRecord(definition, allTimeDoneDatesCount, new Date(start), new Date(end), doneDates, chartData));
+                habitRecords.Add(new HabitRecord(definition, allTimeDoneDatesCount, new Date(start), new Date(end), doneDates, chartData));
             }
-            return metrics;
+            return habitRecords;
+        }
+
+        private static List<Date> GetDoneDatesInRange(List<HabitMonthRecordEntry> habitMonthRecordEntries, DateTime start, DateTime end)
+        {
+            var doneDates = new List<Date>();
+            foreach (var entry in habitMonthRecordEntries)
+            {
+                (var year, var month) = GetYearMonth(entry);
+                var entryStart = new DateTime(year, month, 1);
+                var entryEnd = new DateTime(year, month, DateTime.DaysInMonth(year, month));
+                if (start <= entryEnd || end >= entryStart)
+                {
+                    var datesInRange = entry.Dates.Where(date => start.Day <= date && date <= end.Day).Select(date => new Date(year, month, date)).ToList();
+                    doneDates.AddRange(datesInRange);
+                }
+            }
+            return doneDates.OrderBy(date => date.Year).ThenBy(date => date.Month).ThenBy(date => date.Day).ToList();
         }
 
         private async Task<List<HabitMonthRecordEntry>> GetAllHabitMonthRecordEntriesAsync(string userId, string habitId)
