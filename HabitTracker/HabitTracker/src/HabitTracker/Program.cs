@@ -15,16 +15,21 @@ builder.Services.AddCors(options =>
         policy =>
         {
             // TODO: limit to one stage?
-            policy.WithOrigins("http://localhost:5173", "https://dev.habit-tracker.cloudchaotic.com", "https://habit-tracker.cloudchaotic.com");
+            policy.WithOrigins("http://localhost:5173", "https://dev.habit-tracker.cloudchaotic.com", "https://habit-tracker.cloudchaotic.com")
+                // allows cors preflight requests
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
         });
+});
+
+builder.WebHost.UseKestrel(options =>
+{
+    options.ListenAnyIP(8080);
 });
 
 // Add services to the container.
 builder.Services.AddControllers();
-
-// Add AWS Lambda support. When application is run in Lambda Kestrel is swapped out as the web server with Amazon.Lambda.AspNetCoreServer. This
-// package will act as the webserver translating request and responses between the Lambda event source and ASP.NET Core.
-builder.Services.AddAWSLambdaHosting(LambdaEventSource.RestApi);
 
 // Habit Tracker controller dependencies
 builder.Services.AddTransient<HabitRepository>();
@@ -37,12 +42,10 @@ builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
-
-app.UseHttpsRedirection();
 app.UseCors(myAllowSpecificOrigins);
 app.UseAuthorization();
 app.MapControllers();
 
-app.MapGet("/", () => "Welcome to running ASP.NET Core Minimal API on AWS Lambda");
+app.MapGet("/", () => "Welcome to running ASP.NET Core Minimal API on Amazon ECS");
 
 app.Run();
