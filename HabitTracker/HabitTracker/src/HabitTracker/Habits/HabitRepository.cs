@@ -162,8 +162,10 @@ namespace HabitTracker.Habits
 
         private static ChartData GetChartData(List<HabitMonthRecordEntry> habitRecords)
         {
-            var dates = GetDatesInChronologicalOrder(habitRecords);
             var chartData = new ChartData();
+            if (!habitRecords.Any())
+                return chartData;
+            var dates = GetDatesInChronologicalOrder(habitRecords);
             var dayBeforeFirstRecordedHabit = dates[0].AddDays(-1);
             dates.Insert(0, dayBeforeFirstRecordedHabit);
             chartData.Add(dates[0], 0);
@@ -222,7 +224,7 @@ namespace HabitTracker.Habits
             foreach (var definition in habitDefinitions)
             {
                 var habitMonthRecordEntries = await GetAllHabitMonthRecordEntriesAsync(userId, definition.HabitId);
-                var allTimeDoneDatesCount = habitMonthRecordEntries.Select(entry => entry.Dates.Count).Sum();
+                var allTimeDoneDatesCount = habitMonthRecordEntries.Any() ? habitMonthRecordEntries.Select(entry => entry.Dates.Count).Sum() : 0;
                 var doneDates = GetDoneDatesInRange(habitMonthRecordEntries, start, end);
                 var chartData = GetChartData(habitMonthRecordEntries);
                 habitRecords.Add(new HabitRecord(definition, allTimeDoneDatesCount, new Date(start), new Date(end), doneDates, chartData));
