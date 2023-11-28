@@ -1,14 +1,15 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
-import * as ecsPatterns from 'aws-cdk-lib/aws-ecs-patterns';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
 import { StageConfiguration } from './stage-configurations';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { DnsValidatedCertificate } from 'aws-cdk-lib/aws-certificatemanager';
-import { HostedZone } from 'aws-cdk-lib/aws-route53';
+import { ARecord, HostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
 import { apexDomain, projectName } from './constants';
+import { InstanceProfile, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
+import { AutoScalingGroup } from 'aws-cdk-lib/aws-autoscaling';
 
 interface HabitTrackerBackendStackProps extends cdk.StackProps {
   stageConfig: StageConfiguration
@@ -57,29 +58,98 @@ export class HabitTrackerBackendStack extends cdk.Stack {
       cleanupRoute53Records: true // not recommended for production use
     });
 
-    const loadBalancedFargateService = new ecsPatterns.ApplicationLoadBalancedFargateService(this, 'Service', {
-      vpc,
-      securityGroups: [securityGroup],
-      cpu: 256,
-      memoryLimitMiB: 512,
-      desiredCount: 1,
-      taskImageOptions: {
-        image: ecs.ContainerImage.fromAsset('../HabitTracker'),
-        containerPort: 8080,
-        environment: {
-          'TABLE_NAME': table.tableName,
-          'USERINFO_ENDPOINT_URL': `https://${stageConfig.cognitoHostedUiDomainPrefix}.auth.${this.region}.amazoncognito.com/oauth2/userInfo`
-        }
+    const instanceRole = new Role(this, 'InstanceRole', {
+      assumedBy: new ServicePrincipal('ec2.amazonaws.com')
+    });
+    table.grantReadWriteData(instanceRole);    
+
+    const subnet = vpc.publicSubnets.sort(this.compareIds)[0];
+
+    const elasticIp = new ec2.CfnEIP(this, 'ElasticIp');
+    elasticIp.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
+    const networkInterface = new ec2.CfnNetworkInterface(this, 'NetworkInterface', {
+      subnetId: subnet.subnetId,
+      groupSet: [ securityGroup.securityGroupId ]
+    });
+    const eipAssociation = new ec2.CfnEIPAssociation(this, 'EIPAssociation', {
+      allocationId: elasticIp.attrAllocationId,
+      networkInterfaceId: networkInterface.attrId
+    });
+    eipAssociation.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
+
+    const instanceProfile = new InstanceProfile(this, 'InstanceProfile', {
+      role: instanceRole
+    });    
+
+    const launchTemplate = new ec2.LaunchTemplate(this, 'LaunchTemplate', {
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
+      machineImage: ecs.EcsOptimizedImage.amazonLinux2023(),
+      role: instanceRole,
+      securityGroup: securityGroup
+    });
+    // L2 construct does not yet support specifying network interfaces: https://github.com/aws/aws-cdk/issues/14494
+    // use cdk escape hatch in order to set network interface
+    const cfnLaunchTemplate = launchTemplate.node.defaultChild as ec2.CfnLaunchTemplate;
+    cfnLaunchTemplate.launchTemplateData = {
+      instanceType: 't3.micro',
+      imageId: ecs.EcsOptimizedImage.amazonLinux2023().getImage(this).imageId,
+      networkInterfaces: [{
+        deleteOnTermination: false,
+        deviceIndex: 0,
+        groups: [ securityGroup.securityGroupId ],
+        networkInterfaceId: networkInterface.attrId,
+        subnetId: subnet.subnetId
+      }],
+      iamInstanceProfile: {
+        arn: instanceProfile.instanceProfileArn
       },
-      publicLoadBalancer: true,
-      assignPublicIp: true,
-      certificate,
-      domainName: apiDomainName,
-      domainZone: hostedZone,
-      recordType: ecsPatterns.ApplicationLoadBalancedServiceRecordType.ALIAS
+      // securityGroupIds: [ securityGroup.securityGroupId ],
+      // userData: ec2.UserData.forLinux().render()
+    };
+    const type = launchTemplate.instanceType;
+
+    const autoScalingGroup = new AutoScalingGroup(this, 'AutoScalingGroup', {
+      vpc,
+      launchTemplate,
+      minCapacity: 1,
+      maxCapacity: 1,
+      vpcSubnets: {
+        subnets: [ subnet ]
+      }
     });
 
-    table.grantReadWriteData(loadBalancedFargateService.taskDefinition.taskRole);
+    const cluster = new ecs.Cluster(this, 'Cluster', {
+      vpc
+    });
+    const capacityProvider = new ecs.AsgCapacityProvider(this, 'AsgCapacityProvider', {
+      autoScalingGroup
+    });
+    cluster.addAsgCapacityProvider(capacityProvider);
+
+    const taskDefinition = new ecs.Ec2TaskDefinition(this, 'TaskDefinition');
+    taskDefinition.addContainer('HabitTrackerWebAPIContainer', {
+      image: ecs.ContainerImage.fromAsset('../HabitTracker'),
+      portMappings: [ { containerPort: 8080, hostPort: 80 } ],
+      memoryReservationMiB: 512,
+      environment: {
+        'TABLE_NAME': table.tableName,
+        'USERINFO_ENDPOINT_URL': `https://${stageConfig.cognitoHostedUiDomainPrefix}.auth.${this.region}.amazoncognito.com/oauth2/userInfo`
+      }
+    });
+
+    const service = new ecs.Ec2Service(this, 'EC2Service', {
+      cluster,
+      taskDefinition,
+      desiredCount: 1
+    });
+
+    const aRecord = new ARecord(this, 'ARecord', {
+      target: RecordTarget.fromIpAddresses(elasticIp.attrPublicIp),
+      zone: hostedZone,
+      recordName: apiSubDomain,
+      ttl: cdk.Duration.seconds(0)  // TODO: change
+    });
+    aRecord.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
   }
 
   private setupCognitoUserPool(projectName: string, envConfig: StageConfiguration, apiDomainName: string): cognito.UserPool {
@@ -138,5 +208,15 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     client.node.addDependency(googleProvider);
 
     return userPool;
+  }
+
+  private compareIds(a: ec2.ISubnet, b: ec2.ISubnet): number {
+    if ( a.subnetId < b.subnetId ){
+      return -1;
+    }
+    if ( a.subnetId > b.subnetId ){
+      return 1;
+    }
+    return 0;
   }
 }
