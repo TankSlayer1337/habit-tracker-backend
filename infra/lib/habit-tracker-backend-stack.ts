@@ -131,7 +131,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
       portMappings: [ { containerPort: 8080, hostPort: 80 } ],
       memoryReservationMiB: 256,
       environment: {
-        'DYNAMODB_REGION': table.env.region,
+        'TABLE_REGION': table.env.region,
         'TABLE_NAME': table.tableName,
         'USERINFO_ENDPOINT_URL': `https://${stageConfig.cognitoHostedUiDomainPrefix}.auth.${this.region}.amazoncognito.com/oauth2/userInfo`
       },

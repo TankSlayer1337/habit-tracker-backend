@@ -12,7 +12,7 @@ namespace HabitTracker.DynamoDb
 
         public DynamoDbContextWrapper()
         {
-            var region = Environment.GetEnvironmentVariable("DYNAMODB_REGION") ?? throw new NullReferenceException();
+            var region = Environment.GetEnvironmentVariable("TABLE_REGION") ?? throw new NullReferenceException();
             var client = new AmazonDynamoDBClient(RegionEndpoint.GetBySystemName(region));
             _dynamoDbContext = new DynamoDBContext(client);
             var tableName = Environment.GetEnvironmentVariable("TABLE_NAME") ?? throw new NullReferenceException();
