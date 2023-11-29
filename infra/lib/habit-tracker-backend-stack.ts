@@ -8,8 +8,9 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { DnsValidatedCertificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { ARecord, HostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
 import { apexDomain, projectName } from './constants';
-import { ManagedPolicy, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
+import { ManagedPolicy, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import { AutoScalingGroup, CfnAutoScalingGroup } from 'aws-cdk-lib/aws-autoscaling';
+import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 
 interface HabitTrackerBackendStackProps extends cdk.StackProps {
   stageConfig: StageConfiguration
@@ -75,6 +76,10 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     const instanceRole = new Role(this, 'InstanceRole', {
       assumedBy: new ServicePrincipal('ec2.amazonaws.com')
     });
+    instanceRole.addToPolicy(new PolicyStatement({
+      resources: ['*'],
+      actions: [ 'logs:CreateLogStream', 'logs:PutLogEvents', 'logs:CreateLogGroup']
+    }));
     instanceRole.addManagedPolicy(ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonEC2ContainerServiceforEC2Role'));
     table.grantReadWriteData(instanceRole);
 
@@ -124,17 +129,24 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     taskDefinition.addContainer('HabitTrackerWebAPIContainer', {
       image: ecs.ContainerImage.fromAsset('../HabitTracker'),
       portMappings: [ { containerPort: 8080, hostPort: 80 } ],
-      memoryReservationMiB: 128,
+      memoryReservationMiB: 256,
       environment: {
         'TABLE_NAME': table.tableName,
         'USERINFO_ENDPOINT_URL': `https://${stageConfig.cognitoHostedUiDomainPrefix}.auth.${this.region}.amazoncognito.com/oauth2/userInfo`
-      }
+      },
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: `habit-tracker-service-${stageName}`,
+        logRetention: RetentionDays.ONE_MONTH
+      })
     });
 
     const service = new ecs.Ec2Service(this, 'EC2Service', {
       cluster,
       taskDefinition,
-      desiredCount: 1
+      desiredCount: 1,
+      maxHealthyPercent: 100,
+      minHealthyPercent: 0,
+      circuitBreaker: { rollback: true }
     });
 
     const aRecord = new ARecord(this, 'ARecord', {
