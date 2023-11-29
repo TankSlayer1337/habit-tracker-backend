@@ -8,8 +8,8 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { DnsValidatedCertificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { ARecord, HostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
 import { apexDomain, projectName } from './constants';
-import { InstanceProfile, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
-import { AutoScalingGroup } from 'aws-cdk-lib/aws-autoscaling';
+import { ManagedPolicy, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
+import { AutoScalingGroup, CfnAutoScalingGroup } from 'aws-cdk-lib/aws-autoscaling';
 
 interface HabitTrackerBackendStackProps extends cdk.StackProps {
   stageConfig: StageConfiguration
@@ -58,11 +58,6 @@ export class HabitTrackerBackendStack extends cdk.Stack {
       cleanupRoute53Records: true // not recommended for production use
     });
 
-    const instanceRole = new Role(this, 'InstanceRole', {
-      assumedBy: new ServicePrincipal('ec2.amazonaws.com')
-    });
-    table.grantReadWriteData(instanceRole);    
-
     const subnet = vpc.publicSubnets.sort(this.compareIds)[0];
 
     const elasticIp = new ec2.CfnEIP(this, 'ElasticIp');
@@ -77,50 +72,49 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     });
     eipAssociation.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
 
-    const instanceProfile = new InstanceProfile(this, 'InstanceProfile', {
-      role: instanceRole
-    });    
+    const instanceRole = new Role(this, 'InstanceRole', {
+      assumedBy: new ServicePrincipal('ec2.amazonaws.com')
+    });
+    instanceRole.addManagedPolicy(ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonEC2ContainerServiceforEC2Role'));
+    table.grantReadWriteData(instanceRole);
 
+    const cluster = new ecs.Cluster(this, 'Cluster', {
+      vpc
+    });
+
+    const userData = ec2.UserData.forLinux();
+    userData.addCommands(`echo "ECS_CLUSTER=${cluster.clusterName}" >> /etc/ecs/ecs.config`);
     const launchTemplate = new ec2.LaunchTemplate(this, 'LaunchTemplate', {
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
       machineImage: ecs.EcsOptimizedImage.amazonLinux2023(),
       role: instanceRole,
-      securityGroup: securityGroup
+      userData
     });
     // L2 construct does not yet support specifying network interfaces: https://github.com/aws/aws-cdk/issues/14494
     // use cdk escape hatch in order to set network interface
     const cfnLaunchTemplate = launchTemplate.node.defaultChild as ec2.CfnLaunchTemplate;
     cfnLaunchTemplate.launchTemplateData = {
+      ...cfnLaunchTemplate.launchTemplateData,
       instanceType: 't3.micro',
       imageId: ecs.EcsOptimizedImage.amazonLinux2023().getImage(this).imageId,
       networkInterfaces: [{
         deleteOnTermination: false,
         deviceIndex: 0,
-        groups: [ securityGroup.securityGroupId ],
-        networkInterfaceId: networkInterface.attrId,
-        subnetId: subnet.subnetId
-      }],
-      iamInstanceProfile: {
-        arn: instanceProfile.instanceProfileArn
-      },
-      // securityGroupIds: [ securityGroup.securityGroupId ],
-      // userData: ec2.UserData.forLinux().render()
+        networkInterfaceId: networkInterface.attrId
+      }]
     };
-    const type = launchTemplate.instanceType;
 
     const autoScalingGroup = new AutoScalingGroup(this, 'AutoScalingGroup', {
       vpc,
       launchTemplate,
       minCapacity: 1,
-      maxCapacity: 1,
-      vpcSubnets: {
-        subnets: [ subnet ]
-      }
+      maxCapacity: 1
     });
+    const cfnAutoScalingGroup = autoScalingGroup.node.defaultChild as CfnAutoScalingGroup;
+    cfnAutoScalingGroup.availabilityZones = [ subnet.availabilityZone ];
+    // cannot specify subnet ID if setting existing network interface ID.
+    cfnAutoScalingGroup.vpcZoneIdentifier = undefined;
 
-    const cluster = new ecs.Cluster(this, 'Cluster', {
-      vpc
-    });
     const capacityProvider = new ecs.AsgCapacityProvider(this, 'AsgCapacityProvider', {
       autoScalingGroup
     });
@@ -130,7 +124,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     taskDefinition.addContainer('HabitTrackerWebAPIContainer', {
       image: ecs.ContainerImage.fromAsset('../HabitTracker'),
       portMappings: [ { containerPort: 8080, hostPort: 80 } ],
-      memoryReservationMiB: 512,
+      memoryReservationMiB: 128,
       environment: {
         'TABLE_NAME': table.tableName,
         'USERINFO_ENDPOINT_URL': `https://${stageConfig.cognitoHostedUiDomainPrefix}.auth.${this.region}.amazoncognito.com/oauth2/userInfo`
