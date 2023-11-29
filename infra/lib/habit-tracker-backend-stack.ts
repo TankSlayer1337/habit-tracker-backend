@@ -8,9 +8,9 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { DnsValidatedCertificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { ARecord, HostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
 import { apexDomain, projectName } from './constants';
-import { ManagedPolicy, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
+import { ManagedPolicy, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import { AutoScalingGroup, CfnAutoScalingGroup } from 'aws-cdk-lib/aws-autoscaling';
-import { RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 
 interface HabitTrackerBackendStackProps extends cdk.StackProps {
   stageConfig: StageConfiguration
@@ -76,12 +76,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     const instanceRole = new Role(this, 'InstanceRole', {
       assumedBy: new ServicePrincipal('ec2.amazonaws.com')
     });
-    instanceRole.addToPolicy(new PolicyStatement({
-      resources: ['*'],
-      actions: [ 'logs:CreateLogStream', 'logs:PutLogEvents', 'logs:CreateLogGroup']
-    }));
     instanceRole.addManagedPolicy(ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonEC2ContainerServiceforEC2Role'));
-    table.grantReadWriteData(instanceRole);
 
     const cluster = new ecs.Cluster(this, 'Cluster', {
       vpc
@@ -125,20 +120,27 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     });
     cluster.addAsgCapacityProvider(capacityProvider);
 
+    const logGroup = new LogGroup(this, 'LogGroup', {
+      logGroupName: `habit-tracker-service-${stageName}`,
+      retention: RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY
+    });
     const taskDefinition = new ecs.Ec2TaskDefinition(this, 'TaskDefinition');
     taskDefinition.addContainer('HabitTrackerWebAPIContainer', {
       image: ecs.ContainerImage.fromAsset('../HabitTracker'),
       portMappings: [ { containerPort: 8080, hostPort: 80 } ],
       memoryReservationMiB: 256,
       environment: {
+        'DYNAMODB_REGION': table.env.region,
         'TABLE_NAME': table.tableName,
         'USERINFO_ENDPOINT_URL': `https://${stageConfig.cognitoHostedUiDomainPrefix}.auth.${this.region}.amazoncognito.com/oauth2/userInfo`
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: `habit-tracker-service-${stageName}`,
-        logRetention: RetentionDays.ONE_MONTH
+        logGroup
       })
     });
+    table.grantReadWriteData(taskDefinition.taskRole);
 
     const service = new ecs.Ec2Service(this, 'EC2Service', {
       cluster,

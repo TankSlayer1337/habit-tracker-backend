@@ -34,7 +34,6 @@ builder.Services.AddControllers();
 // Habit Tracker controller dependencies
 builder.Services.AddTransient<HabitRepository>();
 builder.Services.AddScoped<DynamoDbContextWrapper>();
-builder.Services.AddScoped<AmazonDynamoDBClient>();
 builder.Services.AddTransient<EnvironmentVariableGetter>();
 builder.Services.AddTransient<UserInfoGetter>();
 builder.Services.AddTransient<HttpClientWrapper>();

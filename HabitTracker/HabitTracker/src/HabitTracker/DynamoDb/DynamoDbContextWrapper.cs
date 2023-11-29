@@ -1,4 +1,5 @@
-﻿using Amazon.DynamoDBv2;
+﻿using Amazon;
+using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.DataModel;
 using Amazon.DynamoDBv2.DocumentModel;
 
@@ -9,9 +10,11 @@ namespace HabitTracker.DynamoDb
         private readonly DynamoDBContext _dynamoDbContext;
         private readonly DynamoDBOperationConfig _operationConfig;
 
-        public DynamoDbContextWrapper(AmazonDynamoDBClient dynamoDBClient)
+        public DynamoDbContextWrapper()
         {
-            _dynamoDbContext = new(dynamoDBClient);
+            var region = Environment.GetEnvironmentVariable("DYNAMODB_REGION") ?? throw new NullReferenceException();
+            var client = new AmazonDynamoDBClient(RegionEndpoint.GetBySystemName(region));
+            _dynamoDbContext = new DynamoDBContext(client);
             var tableName = Environment.GetEnvironmentVariable("TABLE_NAME") ?? throw new NullReferenceException();
             _operationConfig = new DynamoDBOperationConfig
             {
