@@ -11,6 +11,7 @@ import { apexDomain, projectName } from './constants';
 import { ManagedPolicy, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import { AutoScalingGroup, CfnAutoScalingGroup } from 'aws-cdk-lib/aws-autoscaling';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { Bucket } from 'aws-cdk-lib/aws-s3';
 
 interface HabitTrackerBackendStackProps extends cdk.StackProps {
   stageConfig: StageConfiguration
@@ -48,6 +49,11 @@ export class HabitTrackerBackendStack extends cdk.Stack {
       ec2.Peer.anyIpv4(),
       ec2.Port.tcp(80),
       'Allow HTTP traffic from anywhere'
+    );
+    securityGroup.addIngressRule(
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(443),
+      'Allow HTTPS traffic from anywhere'
     );
     
     const hostedZone = HostedZone.fromLookup(this, 'HostedZone', {
@@ -95,8 +101,6 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     const cfnLaunchTemplate = launchTemplate.node.defaultChild as ec2.CfnLaunchTemplate;
     cfnLaunchTemplate.launchTemplateData = {
       ...cfnLaunchTemplate.launchTemplateData,
-      instanceType: 't3.micro',
-      imageId: ecs.EcsOptimizedImage.amazonLinux2023().getImage(this).imageId,
       networkInterfaces: [{
         deleteOnTermination: false,
         deviceIndex: 0,
@@ -120,6 +124,10 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     });
     cluster.addAsgCapacityProvider(capacityProvider);
 
+    const s3Bucket = new Bucket(this, 'Bucket', {
+      removalPolicy: cdk.RemovalPolicy.DESTROY
+    });
+
     const logGroup = new LogGroup(this, 'LogGroup', {
       logGroupName: `habit-tracker-service-${stageName}`,
       retention: RetentionDays.ONE_MONTH,
@@ -128,12 +136,16 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     const taskDefinition = new ecs.Ec2TaskDefinition(this, 'TaskDefinition');
     taskDefinition.addContainer('HabitTrackerWebAPIContainer', {
       image: ecs.ContainerImage.fromAsset('../HabitTracker'),
-      portMappings: [ { containerPort: 8080, hostPort: 80 } ],
+      portMappings: [ { containerPort: 8080, hostPort: 80 }, { containerPort: 8081, hostPort: 443 } ],
       memoryReservationMiB: 256,
       environment: {
         'TABLE_REGION': table.env.region,
         'TABLE_NAME': table.tableName,
-        'USERINFO_ENDPOINT_URL': `https://${stageConfig.cognitoHostedUiDomainPrefix}.auth.${this.region}.amazoncognito.com/oauth2/userInfo`
+        'USERINFO_ENDPOINT_URL': `https://${stageConfig.cognitoHostedUiDomainPrefix}.auth.${this.region}.amazoncognito.com/oauth2/userInfo`,
+        'BUCKET_REGION': s3Bucket.env.region,
+        'BUCKET_NAME': s3Bucket.bucketName,
+        'DOMAIN_NAME': apiDomainName,
+        'CORS_ORIGINS': stageConfig.corsOrigins.join()
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: `habit-tracker-service-${stageName}`,
@@ -141,6 +153,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
       })
     });
     table.grantReadWriteData(taskDefinition.taskRole);
+    s3Bucket.grantReadWrite(taskDefinition.taskRole);
 
     const service = new ecs.Ec2Service(this, 'EC2Service', {
       cluster,

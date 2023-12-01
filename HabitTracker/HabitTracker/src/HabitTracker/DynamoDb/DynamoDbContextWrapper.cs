@@ -2,6 +2,7 @@
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.DataModel;
 using Amazon.DynamoDBv2.DocumentModel;
+using HabitTracker.Utilities;
 
 namespace HabitTracker.DynamoDb
 {
@@ -12,10 +13,10 @@ namespace HabitTracker.DynamoDb
 
         public DynamoDbContextWrapper()
         {
-            var region = Environment.GetEnvironmentVariable("TABLE_REGION") ?? throw new NullReferenceException();
+            var region = EnvironmentVariableGetter.Get("TABLE_REGION");
             var client = new AmazonDynamoDBClient(RegionEndpoint.GetBySystemName(region));
             _dynamoDbContext = new DynamoDBContext(client);
-            var tableName = Environment.GetEnvironmentVariable("TABLE_NAME") ?? throw new NullReferenceException();
+            var tableName = EnvironmentVariableGetter.Get("TABLE_NAME");
             _operationConfig = new DynamoDBOperationConfig
             {
                 OverrideTableName = tableName
