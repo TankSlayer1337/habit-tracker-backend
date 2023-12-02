@@ -18,7 +18,7 @@ builder.Services.AddCors(options =>
         {
             var corsOrigins = EnvironmentVariableGetter.Get("CORS_ORIGINS").Split(",");
             policy.WithOrigins(corsOrigins)
-              // allows cors preflight requests
+              // allow cors preflight requests
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();

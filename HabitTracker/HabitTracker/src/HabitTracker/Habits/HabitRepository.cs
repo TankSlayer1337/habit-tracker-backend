@@ -242,8 +242,14 @@ namespace HabitTracker.Habits
                 var entryEnd = new DateTime(year, month, DateTime.DaysInMonth(year, month));
                 if (start <= entryEnd || end >= entryStart)
                 {
-                    var datesInRange = entry.Dates.Where(date => start.Day <= date && date <= end.Day).Select(date => new Date(year, month, date)).ToList();
-                    doneDates.AddRange(datesInRange);
+                    foreach (var date in entry.Dates)
+                    {
+                        var dateTime = new DateTime(year, month, date);
+                        if (start <= dateTime && dateTime <= end)
+                        {
+                            doneDates.Add(new Date(dateTime));
+                        }
+                    }
                 }
             }
             return doneDates.OrderBy(date => date.Year).ThenBy(date => date.Month).ThenBy(date => date.Day).ToList();
