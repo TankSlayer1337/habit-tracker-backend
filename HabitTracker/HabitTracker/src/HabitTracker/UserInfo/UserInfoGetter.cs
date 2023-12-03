@@ -8,18 +8,16 @@ namespace HabitTracker.UserInfo
     public class UserInfoGetter 
     {
         private readonly HttpClientWrapper _httpClientWrapper;
-        private readonly EnvironmentVariableGetter _environmentVariableGetter;
 
-        public UserInfoGetter(HttpClientWrapper httpClientWrapper, EnvironmentVariableGetter environmentVariableGetter)
+        public UserInfoGetter(HttpClientWrapper httpClientWrapper)
         {
 
             _httpClientWrapper = httpClientWrapper;
-            _environmentVariableGetter = environmentVariableGetter;
         }
 
         public async Task<string> GetUserIdAsync(string authorizationHeader)
         {
-            var userInfoEndpointUrl = _environmentVariableGetter.Get("USERINFO_ENDPOINT_URL");
+            var userInfoEndpointUrl = EnvironmentVariableGetter.Get("USERINFO_ENDPOINT_URL");
             var userInfoRequest = new HttpRequestMessage(HttpMethod.Get, userInfoEndpointUrl)
             {
                 Headers =
