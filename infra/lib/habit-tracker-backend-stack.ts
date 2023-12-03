@@ -5,7 +5,6 @@ import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
 import { StageConfiguration } from './stage-configurations';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
-import { DnsValidatedCertificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { ARecord, HostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
 import { apexDomain, projectName } from './constants';
 import { ManagedPolicy, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
@@ -55,15 +54,6 @@ export class HabitTrackerBackendStack extends cdk.Stack {
       ec2.Port.tcp(443),
       'Allow HTTPS traffic from anywhere'
     );
-    
-    const hostedZone = HostedZone.fromLookup(this, 'HostedZone', {
-      domainName: apexDomain
-    });
-    const certificate = new DnsValidatedCertificate(this, 'Certificate', {
-      domainName: apiDomainName,
-      hostedZone: hostedZone,
-      cleanupRoute53Records: true // not recommended for production use
-    });
 
     const subnet = vpc.publicSubnets.sort(this.compareIds)[0];
 
@@ -91,7 +81,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     const userData = ec2.UserData.forLinux();
     userData.addCommands(`echo "ECS_CLUSTER=${cluster.clusterName}" >> /etc/ecs/ecs.config`);
     const launchTemplate = new ec2.LaunchTemplate(this, 'LaunchTemplate', {
-      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.NANO),
       machineImage: ecs.EcsOptimizedImage.amazonLinux2023(),
       role: instanceRole,
       userData
@@ -137,7 +127,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
     taskDefinition.addContainer('HabitTrackerWebAPIContainer', {
       image: ecs.ContainerImage.fromAsset('../HabitTracker'),
       portMappings: [ { containerPort: 8080, hostPort: 80 }, { containerPort: 8081, hostPort: 443 } ],
-      memoryReservationMiB: 256,
+      memoryReservationMiB: 128,
       environment: {
         'TABLE_REGION': table.env.region,
         'TABLE_NAME': table.tableName,
@@ -164,11 +154,15 @@ export class HabitTrackerBackendStack extends cdk.Stack {
       circuitBreaker: { rollback: true }
     });
 
+    const hostedZone = HostedZone.fromLookup(this, 'HostedZone', {
+      domainName: apexDomain
+    });
+
     const aRecord = new ARecord(this, 'ARecord', {
       target: RecordTarget.fromIpAddresses(elasticIp.attrPublicIp),
       zone: hostedZone,
       recordName: apiSubDomain,
-      ttl: cdk.Duration.seconds(0)  // TODO: change
+      ttl: cdk.Duration.minutes(30)
     });
     aRecord.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
   }
