@@ -214,7 +214,7 @@ export class HabitTrackerBackendStack extends cdk.Stack {
       userPool: userPool,
       // client ID and secret are replaced in the console.
       clientId: 'REPLACE-ME',
-      clientSecret: 'REPLACE-ME',
+      clientSecretValue: cdk.SecretValue.unsafePlainText('REPLACE-ME'),
       scopes: ['profile', 'email'],
       attributeMapping: {
         email: cognito.ProviderAttribute.GOOGLE_EMAIL
