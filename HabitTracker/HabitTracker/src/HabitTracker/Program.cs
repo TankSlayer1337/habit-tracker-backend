@@ -60,7 +60,6 @@ builder.Services.AddLettuceEncrypt(options =>
     options.DomainNames = new string[] { EnvironmentVariableGetter.Get("DOMAIN_NAME") };
     options.EmailAddress = "erikandresall@gmail.com";
 });
-builder.Services.AddScoped<Bucket>();
 builder.Services.AddTransient<ICertificateRepository, CertificateRepository>();
 builder.Services.AddTransient<ICertificateSource, CertificateSource>();
 builder.Services.AddTransient<IAccountStore, AccountStore>();
