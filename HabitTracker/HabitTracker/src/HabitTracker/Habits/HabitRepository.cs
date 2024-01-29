@@ -8,16 +8,10 @@ using HabitTracker.UserInfo;
 
 namespace HabitTracker.Habits
 {
-    public class HabitRepository
+    public class HabitRepository(UserInfoGetter userInfoGetter, DynamoDbContextWrapper dynamoDbContext)
     {
-        private readonly UserInfoGetter _userInfoGetter;
-        private readonly DynamoDbContextWrapper _dynamoDbContext;
-
-        public HabitRepository(UserInfoGetter userInfoGetter, DynamoDbContextWrapper dynamoDbContext)
-        {
-            _userInfoGetter = userInfoGetter;
-            _dynamoDbContext = dynamoDbContext;
-        }
+        private readonly UserInfoGetter _userInfoGetter = userInfoGetter;
+        private readonly DynamoDbContextWrapper _dynamoDbContext = dynamoDbContext;
 
         public async Task CreateHabit(string authorizationHeader, string habitName)
         {
