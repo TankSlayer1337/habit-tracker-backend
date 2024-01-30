@@ -4,8 +4,8 @@ namespace HabitTracker.Controllers.Outputs
 {
     public class ChartData
     {
-        public List<string> Dates { get; init; } = [];
-        public List<int> Values { get; init; } = [];
+        public List<string> Dates { get; } = [];
+        public List<int> Values { get; } = [];
 
         public void Add(DateTime date, int value)
         {
