@@ -2,18 +2,12 @@
 
 namespace HabitTracker.DynamoDb.Models
 {
-    public class HabitMonthRecordPointer
+    public class HabitMonthRecordPointer(string habitId, int? year = null, int? month = null)
     {
-        public string HabitId { get; init; } = string.Empty;
-        public int? Year { get; init; }
-        public int? Month { get; init; }
-
-        public HabitMonthRecordPointer(string habitId, int? year = null, int? month = null)
-        {
-            HabitId = habitId;
-            Year = year;
-            Month = month;
-        }
+        public string HabitId { get; init; } = habitId;
+        // year and month nullable for querying purposes
+        public int? Year { get; init; } = year;
+        public int? Month { get; init; } = month;
 
         public static HabitMonthRecordPointer Create(DoneHabitRequest request)
         {

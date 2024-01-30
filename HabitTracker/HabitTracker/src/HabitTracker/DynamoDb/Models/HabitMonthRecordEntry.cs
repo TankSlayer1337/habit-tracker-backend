@@ -31,5 +31,14 @@ namespace HabitTracker.DynamoDb.Models
         {
             return (date.Year == Pointer.Year && date.Month == Pointer.Month && Dates.Contains(date.Day));
         }
+
+        /// <exception cref="NullReferenceException"></exception>
+        public (int year, int month) GetYearMonth()
+        {
+            const string errorSuffix = " was null.";
+            var year = Pointer.Year ?? throw new NullReferenceException("Year" + errorSuffix);
+            var month = Pointer.Month ?? throw new NullReferenceException("Month" + errorSuffix);
+            return (year, month);
+        }
     }
 }
