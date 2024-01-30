@@ -26,7 +26,35 @@ namespace Tests
         [Fact]
         public void CloneWithNewName()
         {
+            // Arrange
+            var userId = Guid.NewGuid().ToString();
+            var name = _faker.Random.AlphaNumeric(10);
+            var entry = HabitDefinitionEntry.Create(userId, name);
+            var newName = _faker.Random.AlphaNumeric(10);
 
+            // Act
+            var clonedEntry = entry.CloneWithNewName(newName);
+
+            // Assert
+            Assert.Equal(userId, clonedEntry.PartitionKey.UserId);
+            Assert.Equal(newName, clonedEntry.Name);
+            Assert.Equal(name, entry.Name);
+        }
+
+        [Fact]
+        public void ConvertToDefinition()
+        {
+            // Arrange
+            var userId = Guid.NewGuid().ToString();
+            var name = _faker.Random.AlphaNumeric(10);
+            var entry = HabitDefinitionEntry.Create(userId, name);
+
+            // Act
+            var definition = entry.Convert();
+
+            // Assert
+            Assert.Equal(entry.HabitId, definition.HabitId);
+            Assert.Equal(entry.Name, definition.Name);
         }
     }
 }
