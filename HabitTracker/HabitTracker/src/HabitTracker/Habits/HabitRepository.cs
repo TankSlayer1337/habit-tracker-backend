@@ -136,7 +136,7 @@ namespace HabitTracker.Habits
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
             var date = request.Date;
-            var pointer = HabitMonthRecordPointer.Create(request);
+            var pointer = new HabitMonthRecordPointer(request.HabitId, request.Date.Year, request.Date.Month);
             var habitMonthRecordEntries = await GetHabitMonthRecordEntries(userId, pointer);
             if (habitMonthRecordEntries == null || habitMonthRecordEntries.Count == 0)
             {
