@@ -12,9 +12,7 @@ namespace HabitTracker.Habits
             if (habitRecords.Count == 0)
                 return chartData;
             var dates = GetDatesInChronologicalOrder(habitRecords);
-            var dayBeforeFirstRecordedHabit = dates[0].AddDays(-1);
-            dates.Insert(0, dayBeforeFirstRecordedHabit);
-            chartData.Add(dates[0], 0);
+            SetChartZeroPoint(chartData, dates);
             var doneCount = 0;
             for (var i = 1; i < dates.Count; i++)
             {
@@ -44,6 +42,13 @@ namespace HabitTracker.Habits
             }
             var orderedDates = dates.OrderBy(date => date.Year).ThenBy(date => date.Month).ThenBy(date => date.Day).ToList();
             return orderedDates;
+        }
+
+        private static void SetChartZeroPoint(ChartData chartData, List<DateTime> dates)
+        {
+            var dayBeforeFirstRecordedHabit = dates[0].AddDays(-1);
+            dates.Insert(0, dayBeforeFirstRecordedHabit);
+            chartData.Add(dates[0], 0);
         }
     }
 }
