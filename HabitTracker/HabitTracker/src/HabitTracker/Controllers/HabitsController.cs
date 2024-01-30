@@ -7,14 +7,9 @@ namespace HabitTracker.Controllers
 {
     [ApiController]
     [Route("[controller]")]
-    public class HabitsController : ControllerBase
+    public class HabitsController(HabitRepository habitRepository) : ControllerBase
     {
-        private readonly HabitRepository _habitRepository;
-
-        public HabitsController(HabitRepository habitRepository)
-        {
-            _habitRepository = habitRepository;
-        }
+        private readonly HabitRepository _habitRepository = habitRepository;
 
         [HttpGet("records")]
         public async Task<List<HabitRecord>> GetHabitRecords()
@@ -60,7 +55,7 @@ namespace HabitTracker.Controllers
 
         private static string GetAuthorizationHeader(HttpRequest request)
         {
-            return request.Headers["Authorization"].First();
+            return request.Headers.Authorization.First() ?? throw new NullReferenceException("Authorization Header was null.");
         }
     }
 }

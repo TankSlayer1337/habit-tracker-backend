@@ -3,21 +3,14 @@ using HabitTracker.Controllers.Outputs;
 using HabitTracker.Controllers.Requests;
 using HabitTracker.DynamoDb;
 using HabitTracker.DynamoDb.Models;
-using HabitTracker.Habits.Extensions;
 using HabitTracker.UserInfo;
 
 namespace HabitTracker.Habits
 {
-    public class HabitRepository
+    public class HabitRepository(UserInfoGetter userInfoGetter, DynamoDbContextWrapper dynamoDbContext)
     {
-        private readonly UserInfoGetter _userInfoGetter;
-        private readonly DynamoDbContextWrapper _dynamoDbContext;
-
-        public HabitRepository(UserInfoGetter userInfoGetter, DynamoDbContextWrapper dynamoDbContext)
-        {
-            _userInfoGetter = userInfoGetter;
-            _dynamoDbContext = dynamoDbContext;
-        }
+        private readonly UserInfoGetter _userInfoGetter = userInfoGetter;
+        private readonly DynamoDbContextWrapper _dynamoDbContext = dynamoDbContext;
 
         public async Task CreateHabit(string authorizationHeader, string habitName)
         {
@@ -65,7 +58,7 @@ namespace HabitTracker.Habits
             var date = request.Date;
             var pointer = new HabitMonthRecordPointer(request.HabitId, date.Year, date.Month);
             var habitMonthRecordEntries = await GetHabitMonthRecordEntries(userId, pointer);
-            if (habitMonthRecordEntries == null || !habitMonthRecordEntries.Any())
+            if (habitMonthRecordEntries == null || habitMonthRecordEntries.Count == 0)
             {
                 var newEntry = CreateHabitMonthRecordEntry(userId, request);
                 await _dynamoDbContext.SaveAsync(newEntry);
@@ -89,7 +82,7 @@ namespace HabitTracker.Habits
                 } catch
                 {
                     var latestEntries = await _dynamoDbContext.QueryAsync<HabitMonthRecordEntry>(entry.PartitionKey, QueryOperator.Equal, new HabitMonthRecordPointer[] { entry.Pointer });
-                    if (latestEntries == null || !latestEntries.Any())
+                    if (latestEntries == null || latestEntries.Count == 0)
                     {
                         entry.VersionNumber = null;
                         continue;
@@ -109,7 +102,7 @@ namespace HabitTracker.Habits
                 entry.Dates.Remove(day);
                 try
                 {
-                    if (entry.Dates.Any())
+                    if (entry.Dates.Count != 0)
                     {
                         await _dynamoDbContext.SaveAsync(entry);
                     }
@@ -121,7 +114,7 @@ namespace HabitTracker.Habits
                 catch
                 {
                     var latestEntries = await _dynamoDbContext.QueryAsync<HabitMonthRecordEntry>(entry.PartitionKey, QueryOperator.Equal, new HabitMonthRecordPointer[] { entry.Pointer });
-                    if (latestEntries == null || !latestEntries.Any())
+                    if (latestEntries == null || latestEntries.Count == 0)
                         return;
                     entry = latestEntries.Single();
                 }
@@ -135,7 +128,7 @@ namespace HabitTracker.Habits
             {
                 PartitionKey = HabitMonthRecordEntry.CreatePartitionKey(userId),
                 Pointer = new HabitMonthRecordPointer(request.HabitId, request.Date.Year, request.Date.Month),
-                Dates = new List<int> { request.Date.Day }
+                Dates = [request.Date.Day]
             };
         }
 
@@ -143,11 +136,11 @@ namespace HabitTracker.Habits
         {
             var userId = await _userInfoGetter.GetUserIdAsync(authorizationHeader);
             var date = request.Date;
-            var pointer = HabitMonthRecordPointer.Create(request);
+            var pointer = new HabitMonthRecordPointer(request.HabitId, request.Date.Year, request.Date.Month);
             var habitMonthRecordEntries = await GetHabitMonthRecordEntries(userId, pointer);
-            if (habitMonthRecordEntries == null || !habitMonthRecordEntries.Any())
+            if (habitMonthRecordEntries == null || habitMonthRecordEntries.Count == 0)
             {
-                throw new BadHttpRequestException($"Record of done habit with ID {request.HabitId} and Date {date.Year}-{date.Month}-{date.Day} was not found in the database.");
+                throw new BadHttpRequestException($"Record of done habit with ID {request.HabitId} and Date {date.Year}-{date.Month}-{date.Day} was not found.");
             }
             var entry = habitMonthRecordEntries.Single();
             await RemoveDayFromRecord(entry, date.Day);
@@ -158,55 +151,6 @@ namespace HabitTracker.Habits
             var partitionKey = HabitMonthRecordEntry.CreatePartitionKey(userId);
             var sortKeyValues = new HabitMonthRecordPointer[] { pointer };
             return await _dynamoDbContext.QueryAsync<HabitMonthRecordEntry>(partitionKey, QueryOperator.Equal, sortKeyValues);
-        }
-
-        private static ChartData GetChartData(List<HabitMonthRecordEntry> habitRecords)
-        {
-            var chartData = new ChartData();
-            if (!habitRecords.Any())
-                return chartData;
-            var dates = GetDatesInChronologicalOrder(habitRecords);
-            var dayBeforeFirstRecordedHabit = dates[0].AddDays(-1);
-            dates.Insert(0, dayBeforeFirstRecordedHabit);
-            chartData.Add(dates[0], 0);
-            var doneCount = 0;
-            for (var i = 1; i < dates.Count; i++)
-            {
-                if (!dates[i - 1].IsTheDayBefore(dates[i]))
-                {
-                    var previousDate = dates[i].AddDays(-1);
-                    chartData.Add(previousDate, doneCount);
-                }
-                doneCount++;
-                chartData.Add(dates[i], doneCount);
-            }
-            if (dates.Last().Date != DateTime.Today)
-            {
-                chartData.Add(DateTime.Today, doneCount);
-            }
-            return chartData;
-        }
-
-        private static List<DateTime> GetDatesInChronologicalOrder(List<HabitMonthRecordEntry> habitMonthRecords)
-        {
-            var dates = new List<DateTime>();
-            foreach (var habitMonthRecord in habitMonthRecords)
-            {
-                (var year, var month) = GetYearMonth(habitMonthRecord);
-                var recordedDates = habitMonthRecord.Dates.Select(date => new DateTime(year, month, date));
-                dates.AddRange(recordedDates);
-            }
-            var orderedDates = dates.OrderBy(date => date.Year).ThenBy(date => date.Month).ThenBy(date => date.Day).ToList();
-            return orderedDates;
-        }
-
-        private static (int year, int month) GetYearMonth(HabitMonthRecordEntry habitMonthRecord)
-        {
-            const string errorSuffix = " was null.";
-            var year = habitMonthRecord.Pointer.Year ?? throw new Exception("Year" + errorSuffix);
-            var month = habitMonthRecord.Pointer.Month ?? throw new Exception("Month" + errorSuffix);
-            return (year, month);
-
         }
 
         public async Task<List<HabitRecord>> GetHabitRecordsForPastWeek(string authorizationHeader)
@@ -224,41 +168,18 @@ namespace HabitTracker.Habits
             foreach (var definition in habitDefinitions)
             {
                 var habitMonthRecordEntries = await GetAllHabitMonthRecordEntriesAsync(userId, definition.HabitId);
-                var allTimeDoneDatesCount = habitMonthRecordEntries.Any() ? habitMonthRecordEntries.Select(entry => entry.Dates.Count).Sum() : 0;
-                var doneDates = GetDoneDatesInRange(habitMonthRecordEntries, start, end);
-                var chartData = GetChartData(habitMonthRecordEntries);
+                var allTimeDoneDatesCount = habitMonthRecordEntries.Count != 0 ? habitMonthRecordEntries.Select(entry => entry.Dates.Count).Sum() : 0;
+                var doneDates = DoneDateExtractor.GetDoneDatesInRange(habitMonthRecordEntries, start, end);
+                var chartData = ChartDataCreator.Create(habitMonthRecordEntries);
                 habitRecords.Add(new HabitRecord(definition, allTimeDoneDatesCount, new Date(start), new Date(end), doneDates, chartData));
             }
             return habitRecords;
         }
 
-        private static List<Date> GetDoneDatesInRange(List<HabitMonthRecordEntry> habitMonthRecordEntries, DateTime start, DateTime end)
-        {
-            var doneDates = new List<Date>();
-            foreach (var entry in habitMonthRecordEntries)
-            {
-                (var year, var month) = GetYearMonth(entry);
-                var entryStart = new DateTime(year, month, 1);
-                var entryEnd = new DateTime(year, month, DateTime.DaysInMonth(year, month));
-                if (start <= entryEnd || end >= entryStart)
-                {
-                    foreach (var date in entry.Dates)
-                    {
-                        var dateTime = new DateTime(year, month, date);
-                        if (start <= dateTime && dateTime <= end)
-                        {
-                            doneDates.Add(new Date(dateTime));
-                        }
-                    }
-                }
-            }
-            return doneDates.OrderBy(date => date.Year).ThenBy(date => date.Month).ThenBy(date => date.Day).ToList();
-        }
-
         private async Task<List<HabitMonthRecordEntry>> GetAllHabitMonthRecordEntriesAsync(string userId, string habitId)
         {
             var partitionKey = HabitMonthRecordEntry.CreatePartitionKey(userId);
-            var sortKeyValues = new HabitMonthRecordPointer[] { new HabitMonthRecordPointer(habitId) };
+            var sortKeyValues = new HabitMonthRecordPointer[] { new(habitId) };
             var habitMonthRecordEntries = await _dynamoDbContext.QueryAsync<HabitMonthRecordEntry>(partitionKey, QueryOperator.BeginsWith, sortKeyValues);
             return habitMonthRecordEntries;
         }
@@ -276,9 +197,9 @@ namespace HabitTracker.Habits
                 ItemType = HabitDefinitionEntry.ItemType
             };
             var habits = await _dynamoDbContext.QueryAsync<HabitDefinitionEntry>(partitionKey, QueryOperator.Equal, new string[] { habitId });
-            if (habits == null || !habits.Any())
+            if (habits == null || habits.Count == 0)
             {
-                throw new BadHttpRequestException($"Habit with ID {habitId} was not found in the database.");
+                throw new BadHttpRequestException($"Habit with ID {habitId} was not found.");
             }
             return habits.Single();
         }
